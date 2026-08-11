@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import sys
 import threading
 import time
 from collections import deque
@@ -173,6 +174,22 @@ class WatcherThread:
         return True
 
 
+class QuietHTTPServer(ThreadingHTTPServer):
+    """HTTP-Server, der abgebrochene Verbindungen still hinnimmt.
+
+    Die Voreinstellung schreibt bei jedem Abbruch einen vollstaendigen
+    Stacktrace in die Konsole. Bricht ein Browser eine laufende Anfrage ab -
+    etwa beim Neuladen waehrend einer laengeren Pruefung - sieht das aus wie
+    ein Absturz, obwohl schlicht niemand mehr zuhoert.
+    """
+
+    def handle_error(self, request, client_address) -> None:  # noqa: D102
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class Handler(BaseHTTPRequestHandler):
     """Bedient die Oberflaeche und die API."""
 
@@ -190,15 +207,21 @@ class Handler(BaseHTTPRequestHandler):
     # -- Hilfsmittel ------------------------------------------------------
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        # Die Oberflaeche laedt nichts von aussen - das hier verhindert, dass
-        # eine fremde Seite die API im Namen des Browsers aufruft.
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            # Die Oberflaeche laedt nichts von aussen - das hier verhindert,
+            # dass eine fremde Seite die API im Namen des Browsers aufruft.
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionError, TimeoutError):
+            # Der Browser hat die Verbindung vor der Antwort geschlossen -
+            # etwa weil die Seite neu geladen wurde, waehrend eine laengere
+            # Pruefung lief. Voellig normal und kein Grund fuer eine Meldung.
+            return
 
     def _json(self, payload: Any, status: int = 200) -> None:
         self._send(
@@ -475,7 +498,7 @@ def build_server(
         },
     )
 
-    httpd = ThreadingHTTPServer((host, port), handler)
+    httpd = QuietHTTPServer((host, port), handler)
     httpd.daemon_threads = True
     httpd.auth_token = token  # type: ignore[attr-defined]
     return httpd, app, watcher_thread

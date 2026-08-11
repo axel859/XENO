@@ -273,3 +273,66 @@ class TestLanDefaults:
         finally:
             watcher.stop(timeout=1)
             httpd.server_close()
+
+
+class TestClientDisconnect:
+    """Ein Browser, der die Verbindung abbricht, darf keinen Stacktrace
+    erzeugen. Das passiert im Alltag staendig: eine Pruefung dauert lange,
+    die Seite wird neu geladen - und die Konsole sah aus wie ein Absturz."""
+
+    def _server_with_spy(self, monkeypatch):
+        """QuietHTTPServer ohne echten Socket, dessen Elternaufruf mitgezaehlt wird."""
+        from http.server import ThreadingHTTPServer
+
+        from xeno.server import QuietHTTPServer
+
+        passed_through = []
+        monkeypatch.setattr(
+            ThreadingHTTPServer,
+            "handle_error",
+            lambda self, request, addr: passed_through.append(True),
+        )
+        return QuietHTTPServer.__new__(QuietHTTPServer), passed_through
+
+    def test_connection_error_is_not_passed_on(self, monkeypatch):
+        server, passed_through = self._server_with_spy(monkeypatch)
+        try:
+            raise ConnectionAbortedError(10053, "abgebrochen")
+        except ConnectionAbortedError:
+            server.handle_error(None, ("127.0.0.1", 1234))
+        assert passed_through == []
+
+    def test_timeout_is_not_passed_on(self, monkeypatch):
+        server, passed_through = self._server_with_spy(monkeypatch)
+        try:
+            raise TimeoutError("zu langsam")
+        except TimeoutError:
+            server.handle_error(None, ("127.0.0.1", 1234))
+        assert passed_through == []
+
+    def test_real_errors_still_surface(self, monkeypatch):
+        """Echte Programmfehler duerfen nicht mitverschluckt werden - sonst
+        verschwinden auch die Meldungen, die man wirklich sehen will."""
+        server, passed_through = self._server_with_spy(monkeypatch)
+        try:
+            raise ValueError("echter Fehler")
+        except ValueError:
+            server.handle_error(None, ("127.0.0.1", 1234))
+        assert passed_through == [True]
+
+    def test_send_survives_closed_socket(self, server):
+        """Bricht der Client waehrend der Antwort ab, faellt _send still durch."""
+        import socket
+        import urllib.request
+
+        base, _, _ = server
+        host, port = base.replace("http://", "").split(":")
+
+        # Anfrage schicken und die Verbindung sofort kappen, ohne zu lesen.
+        raw = socket.create_connection((host, int(port)), timeout=5)
+        raw.sendall(b"GET /api/tokens HTTP/1.1\r\nHost: x\r\n\r\n")
+        raw.close()
+
+        # Der Server muss danach noch normal antworten.
+        with urllib.request.urlopen(f"{base}/api/status", timeout=10) as response:
+            assert response.status == 200
