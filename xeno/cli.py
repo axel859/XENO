@@ -210,6 +210,71 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _local_ip() -> str:
+    """Ermittelt die eigene Adresse im lokalen Netz - fuer den Handy-Zugriff."""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            # Es wird nichts gesendet; der Aufruf waehlt nur das Interface aus.
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    from .server import build_server
+    from .watchstate import WatchState
+
+    settings = _apply_overrides(Settings.from_env(), args)
+    state = WatchState(args.state_file)
+
+    try:
+        httpd, app, watcher_thread = build_server(
+            host=args.host,
+            port=args.port,
+            settings=settings,
+            state=state,
+            use_telegram=not args.no_telegram,
+        )
+    except OSError as exc:
+        print(f"Server konnte nicht starten: {exc}", file=sys.stderr)
+        if getattr(exc, "errno", None) in (48, 98):
+            print(f"Port {args.port} ist belegt. Anderen waehlen: --port 8080", file=sys.stderr)
+        return 1
+
+    token = getattr(httpd, "auth_token", "")
+    suffix = f"?token={token}" if token else ""
+
+    print(f"\nXENO Dashboard laeuft\n")
+    print(f"  Auf diesem Rechner:  http://127.0.0.1:{args.port}/{suffix}")
+    if args.host not in ("127.0.0.1", "localhost"):
+        print(f"  Vom Handy im WLAN:   http://{_local_ip()}:{args.port}/{suffix}")
+        print(
+            "\n  Der Zugriff ist mit einem Token geschuetzt, weil der Server\n"
+            "  im ganzen Netzwerk erreichbar ist. Den Link komplett kopieren."
+        )
+    print("\n  Beenden mit Strg-C\n")
+
+    if not args.no_autostart:
+        watcher_thread.start(interval=args.interval, budget=args.budget)
+        app.log("Watcher automatisch gestartet")
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nBeende ...")
+    finally:
+        watcher_thread.stop()
+        httpd.shutdown()
+        try:
+            state.save()
+        except OSError as exc:
+            print(f"Zustand konnte nicht gespeichert werden: {exc}", file=sys.stderr)
+    return 0
+
+
 def cmd_telegram_setup(args: argparse.Namespace) -> int:
     """Fuehrt durch die Telegram-Einrichtung.
 
@@ -368,6 +433,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_watch.add_argument("--list", action="store_true", help="Watchlist anzeigen")
     p_watch.set_defaults(func=cmd_watch)
+
+    p_serve = sub.add_parser(
+        "serve",
+        help="Weboberflaeche starten (Watcher laeuft mit)",
+        description="Startet Dashboard und Watcher im selben Prozess. "
+        "Solange das Fenster offen ist, laeuft der Bot.",
+    )
+    add_discovery(p_serve)
+    p_serve.add_argument("--port", type=int, default=8000, help="Port (8000)")
+    p_serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Adresse. Standard nur dieser Rechner; 0.0.0.0 gibt das lokale "
+        "Netz frei (dann wird ein Token verlangt)",
+    )
+    p_serve.add_argument(
+        "--lan",
+        action="store_const",
+        const="0.0.0.0",
+        dest="host",
+        help="Kurzform fuer --host 0.0.0.0 (Zugriff vom Handy im WLAN)",
+    )
+    p_serve.add_argument("--interval", type=float, default=60.0, help="Sekunden je Durchlauf (60)")
+    p_serve.add_argument("--budget", type=int, default=8, help="max. Tiefpruefungen je Durchlauf (8)")
+    p_serve.add_argument("--state-file", help="Pfad der Zustandsdatei")
+    p_serve.add_argument("--no-telegram", action="store_true", help="Telegram nicht nutzen")
+    p_serve.add_argument(
+        "--no-autostart", action="store_true", help="Watcher nicht automatisch starten"
+    )
+    p_serve.set_defaults(func=cmd_serve)
 
     p_telegram = sub.add_parser("telegram-setup", help="Telegram einrichten und testen")
     p_telegram.add_argument("--token", help="Bot-Token (sonst aus TELEGRAM_BOT_TOKEN)")

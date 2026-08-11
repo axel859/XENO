@@ -42,9 +42,10 @@ Ermitteln der Chat-ID) und fragt nach einem Helius-Key. Alles ist
 oder die `.env` von Hand anlegen, siehe [Konfiguration](#konfiguration).
 
 ```bash
+python3 -m xeno serve                    # Dashboard im Browser + Watcher
 python3 -m xeno check <mint-adresse>     # einen Token gründlich prüfen
 python3 -m xeno scan                     # suchen, filtern, prüfen
-python3 -m xeno watch                    # dauerhaft überwachen und melden
+python3 -m xeno watch                    # überwachen, nur Konsole/Telegram
 python3 -m xeno screen                   # nur Vorfilter, ohne Deep-Check
 python3 -m xeno config                   # aktive Einstellungen zeigen
 ```
@@ -124,6 +125,62 @@ Wichtig ist die Gegenrichtung: **fehlende Daten sind kein Freispruch.** Wenn
 die Holder-Verteilung nicht abrufbar war, hat der Token diese Prüfung nicht
 bestanden — er wurde nicht geprüft. Solche Lücken verhindern ein `OK` und
 erscheinen im Report unter „Wissenslücken".
+
+---
+
+## Dashboard
+
+```bash
+python3 -m xeno serve
+```
+
+Öffnet unter **http://127.0.0.1:8000** eine Oberfläche im Browser — und startet
+den Watcher gleich mit. Solange das Fenster offen ist, läuft der Bot.
+
+Zu sehen sind: Status und Start/Stopp des Watchers, alle geprüften Token mit
+Ampel und Punktzahl, die Watchlist, die letzten Meldungen und ein Log. Token
+lassen sich direkt per Mint-Adresse prüfen oder auf die Watchlist setzen.
+
+### Vom Handy aus
+
+```bash
+python3 -m xeno serve --lan
+```
+
+Gibt den Zugriff im lokalen WLAN frei und zeigt beim Start den passenden Link:
+
+```
+Auf diesem Rechner:  http://127.0.0.1:8000/?token=xxx
+Vom Handy im WLAN:   http://192.168.1.42:8000/?token=xxx
+```
+
+Den Link am Handy öffnen, dann im Browser **Zum Startbildschirm hinzufügen** —
+danach hat XENO ein eigenes Icon und sieht aus wie eine App.
+
+Sobald der Server nicht mehr nur auf dem eigenen Rechner lauscht, wird
+automatisch ein Zugriffs-Token verlangt. Ohne das könnte jedes Gerät im selben
+Netz die Watchlist ändern oder Prüfungen auslösen. Der Token steckt im
+angezeigten Link — deshalb komplett kopieren.
+
+### Was das Dashboard nicht kann
+
+**Es macht den Bot nicht dauerhaft.** Wenn du den Rechner herunterfährst oder
+das Terminal schließt, ist der Watcher weg. Eine App — egal ob Web oder nativ —
+kann daran nichts ändern: ein Programm, das nicht läuft, prüft nichts.
+
+Für echten Dauerbetrieb muss der Prozess auf etwas laufen, das immer an ist:
+
+| | Kosten | |
+|---|---|---|
+| Kleiner VPS | ~4 €/Monat | unabhängig von Strom und Internet zuhause |
+| Raspberry Pi | ~60 € einmalig | hängt an deinem Anschluss |
+| Alter PC/Laptop | 0 € | muss durchlaufen |
+
+Der Umzug ist reines Kopieren — dieselben Befehle, nur als Dienst gestartet.
+Das Dashboard erreichst du dann von überall (am besten über ein privates Netz
+wie Tailscale statt öffentlich).
+
+Bis dahin gilt: **Telegram-Meldungen kommen nur, während der Bot läuft.**
 
 ---
 
@@ -297,7 +354,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 117 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 150 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
@@ -332,6 +389,8 @@ xeno/
   watcher.py       Überwachungsschleife und Meldeentscheidung
   watchstate.py    Zustand, Watchlist, Wiederholungsintervalle
   notify.py        Konsole, Telegram, JSON-Log
+  server.py        Dashboard-Server und JSON-API
+  web/index.html   die Oberfläche
 ```
 
 ---

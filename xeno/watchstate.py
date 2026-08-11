@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -124,11 +125,18 @@ def recheck_interval(age_minutes: float | None, watchlisted: bool = False) -> fl
 
 
 class WatchState:
-    """Persistenter Zustand aller je gesehenen Token."""
+    """Persistenter Zustand aller je gesehenen Token.
+
+    Threadsicher: im Dashboard-Betrieb schreibt der Watcher-Thread, waehrend
+    die HTTP-Threads gleichzeitig lesen. Ohne Sperre koennte ein Lesevorgang
+    ein halb aktualisiertes Bild erwischen oder ueber ein Dictionary
+    iterieren, das sich gerade aendert.
+    """
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or os.environ.get("XENO_STATE_FILE") or DEFAULT_STATE_FILE)
         self.tokens: dict[str, TokenState] = {}
+        self._lock = threading.RLock()
         self.load()
 
     # -- Persistenz -------------------------------------------------------
@@ -142,17 +150,21 @@ class WatchState:
             # Kaputter Zustand darf den Watcher nicht am Start hindern -
             # schlimmstenfalls wird einmal mehr gemeldet als noetig.
             return
-        for mint, raw in (payload.get("tokens") or {}).items():
-            known = {f for f in TokenState.__dataclass_fields__}
-            self.tokens[mint] = TokenState(**{k: v for k, v in raw.items() if k in known})
+        known = {f for f in TokenState.__dataclass_fields__}
+        with self._lock:
+            for mint, raw in (payload.get("tokens") or {}).items():
+                self.tokens[mint] = TokenState(
+                    **{k: v for k, v in raw.items() if k in known}
+                )
 
     def save(self) -> None:
         """Schreibt atomar, damit ein Abbruch die Datei nicht zerstoert."""
-        payload = {
-            "version": STATE_VERSION,
-            "saved_at": time.time(),
-            "tokens": {mint: asdict(state) for mint, state in self.tokens.items()},
-        }
+        with self._lock:
+            payload = {
+                "version": STATE_VERSION,
+                "saved_at": time.time(),
+                "tokens": {mint: asdict(state) for mint, state in self.tokens.items()},
+            }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle, tmp_path = tempfile.mkstemp(
             dir=str(self.path.parent), prefix=".xeno-state-", suffix=".tmp"
@@ -175,7 +187,17 @@ class WatchState:
 
     @property
     def watchlist(self) -> list[TokenState]:
-        return [s for s in self.tokens.values() if s.watchlisted]
+        with self._lock:
+            return [s for s in self.tokens.values() if s.watchlisted]
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        """Kopie aller Eintraege als einfache Dicts.
+
+        Fuer die Weboberflaeche: die Kopie entsteht unter der Sperre, danach
+        kann der HTTP-Thread damit arbeiten, ohne den Watcher zu blockieren.
+        """
+        with self._lock:
+            return [asdict(state) for state in self.tokens.values()]
 
     def is_due(self, mint: str, now: float | None = None) -> bool:
         """Ob ein bekannter Token erneut geprueft werden soll."""
@@ -190,13 +212,18 @@ class WatchState:
 
     def due_for_recheck(self, now: float | None = None) -> list[TokenState]:
         now = now or time.time()
-        return [s for s in self.tokens.values() if self.is_due(s.mint, now)]
+        with self._lock:
+            return [s for s in self.tokens.values() if self.is_due(s.mint, now)]
 
     # -- Aktualisieren ----------------------------------------------------
 
     def record(self, report: RiskReport, now: float | None = None) -> TokenState:
         """Uebernimmt ein Pruefergebnis in den Zustand."""
         now = now or time.time()
+        with self._lock:
+            return self._record_locked(report, now)
+
+    def _record_locked(self, report: RiskReport, now: float) -> TokenState:
         state = self.tokens.get(report.mint)
         if state is None:
             state = TokenState(mint=report.mint, first_seen=now)
@@ -224,35 +251,41 @@ class WatchState:
         return state
 
     def mark_alerted(self, mint: str, verdict: Verdict) -> None:
-        state = self.tokens.get(mint)
-        if state is not None:
-            state.alerted_verdict = verdict.value
+        with self._lock:
+            state = self.tokens.get(mint)
+            if state is not None:
+                state.alerted_verdict = verdict.value
 
     def add_to_watchlist(self, mint: str, symbol: str = "") -> TokenState:
-        state = self.tokens.get(mint)
-        if state is None:
-            state = TokenState(mint=mint, symbol=symbol, first_seen=time.time())
-            self.tokens[mint] = state
-        state.watchlisted = True
-        state.dead = False  # bewusst beobachtet, also weiter pruefen
-        return state
+        with self._lock:
+            state = self.tokens.get(mint)
+            if state is None:
+                state = TokenState(mint=mint, symbol=symbol, first_seen=time.time())
+                self.tokens[mint] = state
+            state.watchlisted = True
+            state.dead = False  # bewusst beobachtet, also weiter pruefen
+            return state
 
     def remove_from_watchlist(self, mint: str) -> bool:
-        state = self.tokens.get(mint)
-        if state is None or not state.watchlisted:
-            return False
-        state.watchlisted = False
-        return True
+        with self._lock:
+            state = self.tokens.get(mint)
+            if state is None or not state.watchlisted:
+                return False
+            state.watchlisted = False
+            return True
 
     def prune(self, max_age_days: float = 7.0, now: float | None = None) -> int:
         """Entfernt alte, nicht beobachtete Eintraege, damit die Datei nicht waechst."""
         now = now or time.time()
         cutoff = now - max_age_days * 86400
-        stale = [
-            mint
-            for mint, state in self.tokens.items()
-            if not state.watchlisted and state.last_checked and state.last_checked < cutoff
-        ]
-        for mint in stale:
-            del self.tokens[mint]
-        return len(stale)
+        with self._lock:
+            stale = [
+                mint
+                for mint, state in self.tokens.items()
+                if not state.watchlisted
+                and state.last_checked
+                and state.last_checked < cutoff
+            ]
+            for mint in stale:
+                del self.tokens[mint]
+            return len(stale)

@@ -177,8 +177,22 @@ class Watcher:
 
         return queue[:budget]
 
-    def cycle(self, budget: int = 8, test_trade: bool = True) -> CycleStats:
-        """Ein vollstaendiger Durchlauf: suchen, filtern, pruefen, melden."""
+    def cycle(
+        self,
+        budget: int = 8,
+        test_trade: bool = True,
+        on_report=None,
+        stop_event=None,
+    ) -> CycleStats:
+        """Ein vollstaendiger Durchlauf: suchen, filtern, pruefen, melden.
+
+        ``on_report`` bekommt jedes Ergebnis - die Weboberflaeche haelt damit
+        die vollstaendigen Befunde vor, die im Zustand nur verkuerzt liegen.
+
+        ``stop_event`` wird zwischen den einzelnen Token geprueft. Ein
+        Durchlauf kann mehrere Minuten dauern; ohne diese Pruefung wuerde ein
+        Stopp erst danach greifen und die Oberflaeche haenge fest.
+        """
         stats = CycleStats()
         now = time.time()
 
@@ -193,6 +207,8 @@ class Watcher:
         stats.passed_screen = len(passed)
 
         for mint, candidate in self.build_queue(passed, budget, now):
+            if stop_event is not None and stop_event.is_set():
+                break
             previous = self.state.get(mint)
             watchlisted = bool(previous and previous.watchlisted)
             try:
@@ -204,6 +220,12 @@ class Watcher:
                 continue
 
             stats.checked += 1
+            if on_report is not None:
+                try:
+                    on_report(report)
+                except Exception as exc:  # noqa: BLE001
+                    stats.errors.append(f"on_report fehlgeschlagen: {exc}")
+
             alert = decide_alert(report, previous, watchlisted=watchlisted)
             # Erst nach der Entscheidung speichern - decide_alert vergleicht
             # gegen den vorherigen Stand.
@@ -229,12 +251,20 @@ class Watcher:
         budget: int = 8,
         test_trade: bool = True,
         max_cycles: int | None = None,
+        stop_event=None,
+        on_report=None,
+        on_cycle=None,
     ) -> None:
-        """Laeuft bis Strg-C.
+        """Laeuft bis Strg-C oder bis ``stop_event`` gesetzt wird.
 
         Ein Fehler in einem Durchlauf beendet die Ueberwachung nicht - sonst
         stirbt der Watcher nachts an einem Netzwerkaussetzer und niemand
         bemerkt es.
+
+        ``stop_event`` wird im Dashboard-Betrieb gebraucht: die Wartezeit
+        zwischen den Durchlaeufen laeuft dann ueber ``Event.wait`` statt
+        ``sleep``, damit ein Stopp sofort greift und nicht erst nach dem
+        vollen Intervall.
         """
         self.log(
             f"Watcher laeuft. Intervall {interval:.0f}s, "
@@ -246,9 +276,17 @@ class Watcher:
         cycles = 0
         try:
             while max_cycles is None or cycles < max_cycles:
+                if stop_event is not None and stop_event.is_set():
+                    break
+
                 started = time.monotonic()
                 try:
-                    stats = self.cycle(budget=budget, test_trade=test_trade)
+                    stats = self.cycle(
+                        budget=budget,
+                        test_trade=test_trade,
+                        on_report=on_report,
+                        stop_event=stop_event,
+                    )
                     self.log(
                         f"Durchlauf {cycles + 1}: {stats.discovered} gefunden, "
                         f"{stats.passed_screen} gefiltert, {stats.checked} geprueft, "
@@ -256,6 +294,8 @@ class Watcher:
                     )
                     for error in stats.errors:
                         self.log(f"! {error}")
+                    if on_cycle is not None:
+                        on_cycle(stats)
                 except Exception as exc:  # noqa: BLE001
                     self.log(f"! Durchlauf fehlgeschlagen: {exc}")
 
@@ -265,7 +305,11 @@ class Watcher:
 
                 remaining = interval - (time.monotonic() - started)
                 if remaining > 0:
-                    time.sleep(remaining)
+                    if stop_event is not None:
+                        if stop_event.wait(remaining):
+                            break
+                    else:
+                        time.sleep(remaining)
         except KeyboardInterrupt:
             self.log("Beendet.")
         finally:

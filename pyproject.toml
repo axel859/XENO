@@ -18,5 +18,8 @@ xeno = "xeno.cli:main"
 [tool.setuptools.packages.find]
 include = ["xeno*"]
 
+[tool.setuptools.package-data]
+xeno = ["web/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

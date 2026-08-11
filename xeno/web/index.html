@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>XENO</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --panel-2: #1a1f26;
+    --line: #262d36;
+    --text: #e6eaef;
+    --muted: #8b95a3;
+    --ok: #35d07f;
+    --caution: #e8b339;
+    --risky: #f08a3c;
+    --avoid: #ef4a5a;
+    --unknown: #6b7683;
+    --accent: #4aa3ef;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(11,13,16,.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px calc(12px + env(safe-area-inset-top)) 16px;
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand h1 { margin: 0; font-size: 19px; letter-spacing: .08em; font-weight: 700; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--unknown); flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 4px rgba(53,208,127,.16); }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+
+  main { padding: 14px 16px 90px; max-width: 780px; margin: 0 auto; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 14px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line);
+    padding: 9px 14px; border-radius: 9px; cursor: pointer;
+  }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121e; font-weight: 600; }
+  button.danger { background: transparent; border-color: var(--avoid); color: var(--avoid); }
+  button:disabled { opacity: .45; }
+
+  input {
+    font: inherit; font-size: 15px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line);
+    padding: 10px 12px; border-radius: 9px; width: 100%;
+  }
+  input::placeholder { color: var(--muted); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 16px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 10px 8px; text-align: center; }
+  .stat b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+
+  nav { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 11px; padding: 4px; margin-bottom: 14px; }
+  nav button { flex: 1; background: transparent; border: none; padding: 9px 4px; font-size: 13.5px; color: var(--muted); }
+  nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          padding: 13px 14px; margin-bottom: 9px; }
+  .card.wl { border-left: 3px solid var(--accent); }
+  .card-head { display: flex; align-items: center; gap: 9px; }
+  .badge { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; padding: 3px 8px;
+           border-radius: 6px; flex: none; }
+  .OK      { background: rgba(53,208,127,.16); color: var(--ok); }
+  .CAUTION { background: rgba(232,179,57,.16); color: var(--caution); }
+  .RISKY   { background: rgba(240,138,60,.16); color: var(--risky); }
+  .AVOID   { background: rgba(239,74,90,.16); color: var(--avoid); }
+  .UNKNOWN { background: rgba(107,118,131,.16); color: var(--unknown); }
+  .sym { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; flex: none; }
+  .meta { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .finding { font-size: 12.5px; margin-top: 5px; padding-left: 15px; position: relative; color: #c3cbd6; }
+  .finding::before { content: ""; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
+  .finding.critical::before, .finding.high::before { background: var(--avoid); }
+  .finding.medium::before { background: var(--caution); }
+  .finding.low::before, .finding.info::before { background: var(--unknown); }
+  .mint { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+          color: var(--muted); margin-top: 8px; word-break: break-all; }
+  .card-actions { display: flex; gap: 7px; margin-top: 10px; }
+  .card-actions button { padding: 6px 11px; font-size: 12.5px; }
+
+  .empty { color: var(--muted); text-align: center; padding: 42px 20px; font-size: 14px; }
+  .note { background: rgba(74,163,239,.09); border: 1px solid rgba(74,163,239,.28);
+          border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: #b8d4ef; margin-bottom: 14px; }
+  .warn { background: rgba(232,179,57,.09); border-color: rgba(232,179,57,.28); color: #e8cf9a; }
+
+  .alert-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .kind-new { color: var(--ok); }
+  .kind-critical_change { color: var(--avoid); }
+  .kind-degraded { color: var(--risky); }
+  .kind-improved { color: var(--accent); }
+  .when { color: var(--muted); font-size: 11.5px; float: right; }
+
+  pre.log { background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
+            padding: 12px; font-size: 11.5px; color: var(--muted); overflow-x: auto;
+            white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line);
+          border-top-color: var(--accent); border-radius: 50%; animation: r .7s linear infinite;
+          vertical-align: -1px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot" id="dot"></span>
+    <h1>XENO</h1>
+    <button id="toggle" style="margin-left:auto" onclick="toggleWatcher()">…</button>
+  </div>
+  <div class="sub" id="sub">verbinde …</div>
+</header>
+
+<main>
+  <div id="notes"></div>
+
+  <div class="stats">
+    <div class="stat"><b id="s-checked">–</b><span>Geprüft</span></div>
+    <div class="stat"><b id="s-tokens">–</b><span>Token</span></div>
+    <div class="stat"><b id="s-wl">–</b><span>Watchlist</span></div>
+    <div class="stat"><b id="s-alerts">–</b><span>Meldungen</span></div>
+  </div>
+
+  <nav>
+    <button class="active" data-tab="tokens" onclick="showTab('tokens')">Token</button>
+    <button data-tab="watchlist" onclick="showTab('watchlist')">Watchlist</button>
+    <button data-tab="alerts" onclick="showTab('alerts')">Meldungen</button>
+    <button data-tab="log" onclick="showTab('log')">Log</button>
+  </nav>
+
+  <div id="tab-tokens" class="tab">
+    <div id="tokens"><div class="empty">lade …</div></div>
+  </div>
+
+  <div id="tab-watchlist" class="tab" hidden>
+    <div class="row" style="margin-bottom:12px">
+      <input id="mint" placeholder="Mint-Adresse einfügen" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button class="primary" onclick="addWatch()">Beobachten</button>
+      <button onclick="checkNow()">Jetzt prüfen</button>
+    </div>
+    <div id="watchlist"><div class="empty">lade …</div></div>
+  </div>
+
+  <div id="tab-alerts" class="tab" hidden>
+    <div id="alerts"><div class="empty">lade …</div></div>
+  </div>
+
+  <div id="tab-log" class="tab" hidden>
+    <pre class="log" id="log">lade …</pre>
+  </div>
+</main>
+
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+let tab = 'tokens';
+let busy = false;
+
+function api(path, options = {}) {
+  const headers = Object.assign({'Content-Type': 'application/json'}, options.headers || {});
+  if (token) headers['X-Auth-Token'] = token;
+  return fetch(path, Object.assign({}, options, {headers})).then(r => {
+    if (!r.ok) return r.json().catch(() => ({error: 'HTTP ' + r.status})).then(e => Promise.reject(e.error));
+    return r.json();
+  });
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function money(v) {
+  if (v == null) return '–';
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'k';
+  return '$' + Math.round(v);
+}
+
+function ago(ts) {
+  if (!ts) return 'nie';
+  const s = Date.now() / 1000 - ts;
+  if (s < 60) return Math.round(s) + 's';
+  if (s < 3600) return Math.round(s / 60) + 'min';
+  if (s < 86400) return (s / 3600).toFixed(1) + 'h';
+  return (s / 86400).toFixed(1) + 'd';
+}
+
+function showTab(name) {
+  tab = name;
+  document.querySelectorAll('.tab').forEach(el => el.hidden = el.id !== 'tab-' + name);
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  refresh();
+}
+
+function tokenCard(t) {
+  const m = t.market || {};
+  const h = t.holders || {};
+  const findings = (t.top_findings || [])
+    .map(f => `<div class="finding ${esc(f.severity)}">${esc(f.message)}</div>`).join('');
+
+  const bits = [];
+  if (m.liquidity_usd) bits.push('Liq ' + money(m.liquidity_usd));
+  if (h.top10_pct != null) bits.push('Top10 ' + h.top10_pct.toFixed(0) + '%');
+  bits.push('geprüft ' + ago(t.last_checked));
+
+  return `<div class="card ${t.watchlisted ? 'wl' : ''}">
+    <div class="card-head">
+      <span class="badge ${esc(t.verdict)}">${esc(t.verdict)}</span>
+      <span class="sym">${esc(t.symbol || t.mint.slice(0, 10))}</span>
+      <span class="score">${t.score}/100</span>
+    </div>
+    <div class="meta">${esc(bits.join('  ·  '))}</div>
+    ${findings}
+    <div class="mint">${esc(t.mint)}</div>
+    <div class="card-actions">
+      ${t.watchlisted
+        ? `<button class="danger" onclick="removeWatch('${esc(t.mint)}')">Entfernen</button>`
+        : `<button onclick="addWatch('${esc(t.mint)}')">Beobachten</button>`}
+      <button onclick="recheck('${esc(t.mint)}')">Neu prüfen</button>
+      <button onclick="window.open('https://dexscreener.com/solana/${esc(t.mint)}','_blank')">Chart</button>
+    </div>
+  </div>`;
+}
+
+function renderStatus(s) {
+  document.getElementById('dot').className = 'dot' + (s.running && !s.stopping ? ' on' : '');
+  const btn = document.getElementById('toggle');
+  if (!btn.disabled) btn.textContent = s.running ? 'Stopp' : 'Start';
+  document.getElementById('sub').textContent = s.stopping
+    ? 'hält an — laufende Prüfung wird noch beendet'
+    : s.running
+      ? `läuft · alle ${Math.round(s.interval)}s · ${s.cycles} Durchläufe`
+      : 'gestoppt';
+  document.getElementById('s-checked').textContent = s.checked_total;
+  document.getElementById('s-wl').textContent = s.watchlist;
+  document.getElementById('s-alerts').textContent = s.alerts;
+
+  const notes = [];
+  if (s.uses_public_rpc) {
+    notes.push(`<div class="note warn">Öffentlicher RPC aktiv — Holder-Daten kommen von RugCheck.
+      Für eigene Chain-Abfrage einen kostenlosen Helius-Key in die <code>.env</code> eintragen.</div>`);
+  }
+  if (!s.running && s.cycles === 0) {
+    notes.push(`<div class="note">Der Watcher läuft noch nicht. Oben auf <b>Start</b> tippen —
+      danach sucht er alle 60 Sekunden nach neuen Token.</div>`);
+  }
+  document.getElementById('notes').innerHTML = notes.join('');
+}
+
+function refresh() {
+  api('/api/status').then(renderStatus).catch(err => {
+    document.getElementById('sub').textContent = 'keine Verbindung: ' + err;
+  });
+
+  if (tab === 'tokens' || tab === 'watchlist') {
+    api('/api/tokens').then(d => {
+      document.getElementById('s-tokens').textContent = d.tokens.length;
+      const all = d.tokens.filter(t => t.check_count > 0);
+      document.getElementById('tokens').innerHTML = all.length
+        ? all.map(tokenCard).join('')
+        : '<div class="empty">Noch nichts geprüft.<br>Watcher starten oder oben eine Mint-Adresse prüfen.</div>';
+
+      const wl = d.tokens.filter(t => t.watchlisted);
+      document.getElementById('watchlist').innerHTML = wl.length
+        ? wl.map(tokenCard).join('')
+        : '<div class="empty">Watchlist ist leer.<br>Mint-Adresse oben einfügen und auf Beobachten tippen.</div>';
+    }).catch(() => {});
+  }
+
+  if (tab === 'alerts') {
+    api('/api/alerts').then(d => {
+      document.getElementById('alerts').innerHTML = d.alerts.length
+        ? d.alerts.map(a => `<div class="card">
+            <span class="when">${ago(a.at)} her</span>
+            <div class="alert-kind kind-${esc(a.kind)}">${esc(a.title)}</div>
+            <div class="card-head" style="margin-top:6px">
+              <span class="badge ${esc(a.verdict)}">${esc(a.verdict)}</span>
+              <span class="sym">${esc(a.symbol || a.mint.slice(0, 10))}</span>
+            </div>
+            ${a.lines.slice(1).map(l => `<div class="finding info">${esc(l)}</div>`).join('')}
+            <div class="mint">${esc(a.mint)}</div>
+          </div>`).join('')
+        : '<div class="empty">Noch keine Meldungen.</div>';
+    }).catch(() => {});
+  }
+
+  if (tab === 'log') {
+    api('/api/log').then(d => {
+      document.getElementById('log').textContent = d.lines.slice().reverse().join('\n') || 'leer';
+    }).catch(() => {});
+  }
+}
+
+function toggleWatcher() {
+  const btn = document.getElementById('toggle');
+  const starting = btn.textContent === 'Start';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  api('/api/watcher/' + (starting ? 'start' : 'stop'), {method: 'POST', body: '{}'})
+    .then(renderStatus)
+    .catch(err => alert('Fehler: ' + err))
+    .finally(() => { btn.disabled = false; refresh(); });
+}
+
+function addWatch(mint) {
+  const value = mint || document.getElementById('mint').value.trim();
+  if (!value) return;
+  api('/api/watchlist', {method: 'POST', body: JSON.stringify({mint: value})})
+    .then(() => { document.getElementById('mint').value = ''; refresh(); })
+    .catch(err => alert('Fehler: ' + err));
+}
+
+function removeWatch(mint) {
+  api('/api/watchlist/' + encodeURIComponent(mint), {method: 'DELETE'})
+    .then(refresh).catch(err => alert('Fehler: ' + err));
+}
+
+function runCheck(mint) {
+  if (busy) return;
+  busy = true;
+  const previous = document.getElementById('sub').textContent;
+  document.getElementById('sub').innerHTML = '<span class="spin"></span> prüfe ' + esc(mint.slice(0, 10)) + ' …';
+  api('/api/check', {method: 'POST', body: JSON.stringify({mint})})
+    .then(r => { document.getElementById('mint').value = ''; alert(`${r.symbol || 'Token'}: ${r.verdict} (${r.score}/100)`); })
+    .catch(err => alert('Fehler: ' + err))
+    .finally(() => { busy = false; document.getElementById('sub').textContent = previous; refresh(); });
+}
+
+function checkNow() {
+  const value = document.getElementById('mint').value.trim();
+  if (value) runCheck(value);
+}
+const recheck = runCheck;
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
