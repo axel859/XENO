@@ -46,15 +46,58 @@ enthält `README.md` und einen Ordner `xeno`.
 
 ## Schritt 3 — Das Terminal im richtigen Ordner öffnen
 
-Das ist der Schritt, an dem die meisten hängenbleiben. Es gibt einen Trick,
-mit dem man sich alles Weitere spart:
+Das ist der Schritt, an dem die meisten hängenbleiben.
 
-1. Den Ordner öffnen, in dem `README.md` liegt
-2. Oben in die **Adressleiste** klicken (dort steht der Pfad)
-3. Alles markieren, `powershell` eintippen, **Enter**
+**Worum es geht:** PowerShell ist ein Fenster, in das man Befehle tippt. Es
+„steht" dabei immer in einem Ordner. Es muss im XENO-Ordner stehen, sonst
+findet es die Dateien nicht.
 
-Es öffnet sich ein blaues Fenster — das ist PowerShell, und es steht bereits
-im richtigen Ordner. Genau dort werden alle Befehle eingetippt.
+### Welcher Ordner genau?
+
+Windows packt beim Entpacken oft einen gleichnamigen Ordner in einen
+gleichnamigen Ordner — man muss also eventuell zweimal hineinklicken:
+
+```
+XENO-claude-bot-programming-ygi80v
+   └── XENO-claude-bot-programming-ygi80v
+          ├── README.md      ← dieser Ordner ist gemeint
+          ├── WINDOWS.md
+          └── xeno   (Ordner)
+```
+
+Der richtige Ordner ist der, in dem **`README.md`** und der Ordner **`xeno`**
+nebeneinander liegen.
+
+### Drei Wege — einer davon klappt sicher
+
+**Weg 1 — Rechtsklick.** Im Ordner auf eine leere Stelle rechtsklicken:
+
+- Windows 11: „**Im Terminal öffnen**"
+- Windows 10: `Shift` halten, dann rechtsklicken → „**PowerShell-Fenster hier
+  öffnen**"
+
+**Weg 2 — Adressleiste.** Oben im Explorer steht der Pfad
+(`Dieser PC › Downloads › XENO-…`). Einmal hineinklicken — er wird zu Text und
+ist markiert. Dann `powershell` tippen und **Enter**.
+
+**Weg 3 — Ordner hineinziehen.** Funktioniert immer, auch wenn die anderen
+Wege fehlen:
+
+1. Startmenü → `powershell` tippen → **Windows PowerShell** öffnen
+2. `cd ` eintippen — mit Leerzeichen dahinter, noch **kein** Enter
+3. Den XENO-Ordner aus dem Explorer in das blaue Fenster **ziehen und
+   loslassen** — der Pfad erscheint von selbst
+4. **Enter**
+
+### Kontrolle
+
+```
+dir
+```
+
+Stehen in der Liste `README.md` und `xeno`, ist alles richtig. Sonst bist du
+einen Ordner zu hoch oder zu tief — dann Weg 3 mit dem richtigen Ordner
+wiederholen.
 
 ---
 
