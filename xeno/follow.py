@@ -32,6 +32,24 @@ HORIZONS: dict[str, int] = {
 #: Ab wann ein Token als praktisch wertlos gilt (Anteil vom Ausgangskurs).
 DEAD_THRESHOLD = 0.1
 
+#: Wie weit eine Messung hinter ihrem Zeitpunkt liegen darf.
+#:
+#: Wichtig, wenn der Bot nicht durchgehend laeuft: war er zwoelf Stunden aus,
+#: waeren beim Neustart die Zeitpunkte 15min, 1h und 6h alle "faellig" - und
+#: bekaemen denselben aktuellen Kurs eingetragen. Die Statistik behauptete
+#: dann, ein Token habe sich nach 15 Minuten verzehnfacht, obwohl der Wert in
+#: Wahrheit zwoelf Stunden spaeter gemessen wurde. Verpasste Zeitpunkte werden
+#: deshalb als solche vermerkt statt geraten.
+LATE_TOLERANCE = 0.5
+MIN_TOLERANCE_SECONDS = 5 * 60
+
+
+def deadline(horizon_seconds: int) -> float:
+    """Spaetester Zeitpunkt, zu dem eine Messung noch gueltig ist."""
+    return horizon_seconds + max(
+        MIN_TOLERANCE_SECONDS, horizon_seconds * LATE_TOLERANCE
+    )
+
 #: So viele Mints passen in einen DexScreener-Request.
 BATCH_SIZE = 30
 
@@ -49,13 +67,19 @@ class FollowStats:
 
 def due_measurements(
     state: WatchState, now: float
-) -> dict[str, list[str]]:
-    """Welche Token zu welchem Zeitpunkt gemessen werden muessen.
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Welche Messungen jetzt anstehen und welche endgueltig verpasst sind.
 
-    Rueckgabe ist ``{"1h": [mint, ...], ...}`` - ein Token kann dabei in
-    mehreren Zeitpunkten stehen, wenn der Bot zwischenzeitlich aus war.
+    Rueckgabe ist ``(faellig, verpasst)``, beides als ``{"1h": [mint, ...]}``.
+
+    Die Trennung ist der Kern: lief der Bot zwischendurch nicht, sind mehrere
+    Zeitpunkte gleichzeitig "ueberfaellig". Sie alle mit dem aktuellen Kurs zu
+    befuellen waere bequem und falsch - der Wert gehoerte dann zu einem ganz
+    anderen Zeitpunkt als seiner Beschriftung.
     """
     pending: dict[str, list[str]] = {}
+    missed: dict[str, list[str]] = {}
+
     for entry in state.snapshot():
         baseline_at = entry.get("baseline_at") or 0
         if not baseline_at or not entry.get("baseline_price_usd"):
@@ -63,9 +87,12 @@ def due_measurements(
         age = now - baseline_at
         recorded = entry.get("outcomes") or {}
         for label, seconds in HORIZONS.items():
-            if label not in recorded and age >= seconds:
-                pending.setdefault(label, []).append(entry["mint"])
-    return pending
+            if label in recorded or age < seconds:
+                continue
+            target = pending if age <= deadline(seconds) else missed
+            target.setdefault(label, []).append(entry["mint"])
+
+    return pending, missed
 
 
 class OutcomeTracker:
@@ -78,7 +105,18 @@ class OutcomeTracker:
     def run(self, now: float, on_error=None) -> FollowStats:
         """Misst alle faelligen Zeitpunkte und traegt sie im Zustand ein."""
         stats = FollowStats()
-        pending = due_measurements(self.state, now)
+        pending, missed = due_measurements(self.state, now)
+
+        # Verpasste Zeitpunkte als solche festhalten, damit sie nicht bei
+        # jedem Durchlauf erneut anstehen - und damit sie in der Auswertung
+        # als Luecke erscheinen statt als erfundener Wert.
+        for label, mints in missed.items():
+            for mint in mints:
+                entry = self.state.get(mint)
+                if entry is not None:
+                    entry.outcomes[label] = None  # type: ignore[assignment]
+                    stats.missing += 1
+
         if not pending:
             return stats
 
@@ -135,8 +173,12 @@ def summarise(states: list[TokenState]) -> dict[str, dict[str, dict]]:
     for verdict, entries in grouped.items():
         per_horizon: dict[str, dict] = {}
         for label in HORIZONS:
+            # None steht fuer "Zeitpunkt verpasst, weil der Bot aus war" -
+            # das ist keine Null, sondern gar keine Messung.
             values = [
-                e.outcomes[label] for e in entries if label in e.outcomes
+                e.outcomes[label]
+                for e in entries
+                if e.outcomes.get(label) is not None
             ]
             if not values:
                 continue

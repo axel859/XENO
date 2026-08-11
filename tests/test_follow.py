@@ -99,21 +99,33 @@ class TestDueMeasurements:
         return state
 
     def test_nothing_due_right_away(self, tmp_path):
-        assert due_measurements(self._state(tmp_path, 60), time.time()) == {}
+        pending, missed = due_measurements(self._state(tmp_path, 60), time.time())
+        assert pending == {} and missed == {}
 
     def test_first_horizon_becomes_due(self, tmp_path):
-        due = due_measurements(self._state(tmp_path, 16 * 60), time.time())
-        assert due.get("15m") == [MINT]
-        assert "1h" not in due
+        pending, _ = due_measurements(self._state(tmp_path, 16 * 60), time.time())
+        assert pending.get("15m") == [MINT]
+        assert "1h" not in pending
 
-    def test_missed_horizons_are_caught_up(self, tmp_path):
-        """War der Bot laenger aus, sind mehrere Zeitpunkte gleichzeitig faellig."""
-        due = due_measurements(self._state(tmp_path, 7 * 3600), time.time())
-        assert set(due) == {"15m", "1h", "6h"}
+    def test_long_downtime_marks_horizons_as_missed(self, tmp_path):
+        """Der entscheidende Fall bei einem Bot, der nicht durchlaeuft: nach
+        sieben Stunden Pause darf der aktuelle Kurs nicht als '15-Minuten-Wert'
+        eingetragen werden. Nur der 6h-Punkt liegt noch im Rahmen."""
+        pending, missed = due_measurements(self._state(tmp_path, 7 * 3600), time.time())
+        assert set(missed) == {"15m", "1h"}
+        assert set(pending) == {"6h"}
+
+    def test_slightly_late_is_still_accepted(self, tmp_path):
+        """Ein Durchlauf alle 60s trifft die Zeitpunkte nie exakt - eine
+        knappe Verspaetung muss deshalb zaehlen."""
+        pending, missed = due_measurements(self._state(tmp_path, 70 * 60), time.time())
+        assert pending.get("1h") == [MINT]
+        assert "1h" not in missed
 
     def test_already_measured_is_skipped(self, tmp_path):
         state = self._state(tmp_path, 16 * 60, recorded={"15m": 1.2})
-        assert due_measurements(state, time.time()) == {}
+        pending, missed = due_measurements(state, time.time())
+        assert pending == {} and missed == {}
 
 
 class FakePrices:
@@ -145,13 +157,36 @@ class TestOutcomeTracker:
         OutcomeTracker(state, FakePrices({})).run(time.time())
         assert state.get(MINT).outcomes["15m"] == 0.0
 
-    def test_prices_are_fetched_once_for_several_horizons(self, tmp_path):
-        state = self._ready(tmp_path)
-        state.get(MINT).baseline_at = time.time() - 7 * 3600
-        source = FakePrices({MINT: 1.0})
+    def test_many_tokens_cost_one_request(self, tmp_path):
+        """Der eigentliche Sinn der Buendelung: 30 faellige Token, ein Abruf."""
+        state = WatchState(tmp_path / "s.json")
+        mints = [f"mint{i:039d}" for i in range(12)]
+        for mint in mints:
+            state.record(clean(mint=mint, price=1.0))
+            state.get(mint).baseline_at = time.time() - 16 * 60
+
+        source = FakePrices({m: 2.0 for m in mints})
         stats = OutcomeTracker(state, source).run(time.time())
         assert source.calls == 1
-        assert stats.measured == 3
+        assert stats.measured == 12
+
+    def test_missed_horizons_are_recorded_as_gaps(self, tmp_path):
+        """War der Bot lange aus, wird die Luecke vermerkt statt geraten."""
+        state = self._ready(tmp_path)
+        state.get(MINT).baseline_at = time.time() - 30 * 3600
+        stats = OutcomeTracker(state, FakePrices({MINT: 50.0})).run(time.time())
+        outcomes = state.get(MINT).outcomes
+        assert outcomes["15m"] is None
+        assert outcomes["1h"] is None
+        assert stats.missing >= 2
+
+    def test_gaps_are_not_retried(self, tmp_path):
+        state = self._ready(tmp_path)
+        state.get(MINT).baseline_at = time.time() - 30 * 3600
+        OutcomeTracker(state, FakePrices({MINT: 50.0})).run(time.time())
+        source = FakePrices({MINT: 50.0})
+        stats = OutcomeTracker(state, source).run(time.time())
+        assert stats.missing == 0
 
     def test_failure_is_reported_not_raised(self, tmp_path):
         class Broken:
@@ -209,6 +244,17 @@ class TestSummary:
 
     def test_entries_without_results_are_ignored(self):
         assert summarise([self._entry("OK", {}, "a")]) == {}
+
+    def test_gaps_do_not_count_as_zero(self):
+        """Eine verpasste Messung ist keine Null - sonst saehe jede Pause des
+        Bots wie eine Reihe von Totalverlusten aus."""
+        entries = [
+            self._entry("OK", {"1h": None}, "a"),
+            self._entry("OK", {"1h": 2.0}, "b"),
+        ]
+        row = summarise(entries)["OK"]["1h"]
+        assert row["count"] == 1
+        assert row["dead_pct"] == 0.0
 
     def test_dead_threshold(self):
         assert is_dead(0.05) and is_dead(0.1)

@@ -254,6 +254,23 @@ Zwei bewusste Entscheidungen:
   keine fehlende Messung, sondern das Ergebnis — sonst fiele genau der
   schlimmste Ausgang aus der Auswertung.
 
+- **Verpasste Zeitpunkte bleiben Lücken.** Läuft der Bot nicht durchgehend,
+  sind nach einer Pause mehrere Zeitpunkte gleichzeitig überfällig. Sie alle
+  mit dem aktuellen Kurs zu füllen wäre bequem und falsch — der Wert gehörte
+  dann zu einem ganz anderen Zeitpunkt als seiner Beschriftung. Eine Messung
+  zählt nur innerhalb ihres Zeitfensters:
+
+  | Zeitpunkt | fällig ab | gültig bis |
+  |---|---|---|
+  | 15m | 15 min | 22 min |
+  | 1h | 60 min | 90 min |
+  | 6h | 6 h | 9 h |
+  | 24h | 24 h | 36 h |
+
+  War der PC drei Stunden aus, erscheinen `15m` und `1h` als Lücke statt als
+  erfundener Wert. Je durchgehender der Bot läuft, desto vollständiger die
+  Auswertung — **die 24h-Zahlen bekommst du nur mit einem Dauerbetrieb.**
+
 Der Abruf kostet nichts vom Prüfbudget: DexScreener liefert 30 Kurse pro
 Anfrage, ohne RPC.
 
@@ -555,7 +572,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 241 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 245 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
