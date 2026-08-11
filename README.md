@@ -24,8 +24,8 @@ cd XENO
 python3 -m xeno scan
 ```
 
-Keine Abhängigkeiten nötig — alles läuft mit der Python-Standardbibliothek
-(ab Python 3.10).
+Keine Abhängigkeiten nötig — alles läuft mit der Python-Standardbibliothek.
+Ab **Python 3.10**, ohne Obergrenze; getestet auf 3.11 und 3.14.
 
 ### Geführte Einrichtung
 

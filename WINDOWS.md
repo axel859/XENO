@@ -7,11 +7,17 @@ kein Git nötig. Dauert etwa 10 Minuten.
 
 ## Schritt 1 — Python installieren
 
+> **Schon Python drauf?** Dann diesen Schritt überspringen. Alles ab **3.10**
+> funktioniert, nach oben gibt es keine Grenze — XENO ist auf 3.11 **und 3.14**
+> vollständig getestet (Tests, echter Scan, Dashboard).
+>
+> Prüfen lässt sich das mit `python --version` in PowerShell.
+
 Python ist die Sprache, in der XENO geschrieben ist. Windows hat es nicht
 vorinstalliert.
 
 1. **Microsoft Store** öffnen (Startmenü → „Store" tippen)
-2. Oben nach **`Python 3.12`** suchen
+2. Oben nach **`Python 3.12`** suchen (jede neuere Version geht genauso)
 3. Auf **Installieren** klicken, warten
 
 > Warum aus dem Store? Weil Windows Python damit automatisch richtig
@@ -65,11 +71,16 @@ python -m xeno --version
 <details>
 <summary>Falls stattdessen ein Fehler kommt</summary>
 
-- **„Python wurde nicht gefunden"** → der Store öffnet sich. Dann Schritt 1
-  nachholen und PowerShell **schließen und neu öffnen**.
+- **„Python wurde nicht gefunden"** → einmal `py -m xeno --version` probieren.
+  `py` ist der Windows-Starter und funktioniert auch dann, wenn `python`
+  nicht im Suchpfad steht. Klappt auch das nicht: Schritt 1 nachholen und
+  PowerShell **schließen und neu öffnen**.
 - **„No module named xeno"** → du bist im falschen Ordner. Prüfen mit `dir` —
   in der Liste müssen `README.md` und `xeno` auftauchen. Sonst Schritt 3
   wiederholen, aber im richtigen Unterordner.
+
+Funktioniert bei dir `py` statt `python`, dann in allen folgenden Befehlen
+einfach `py` verwenden.
 
 </details>
 
