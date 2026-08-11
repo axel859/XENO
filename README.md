@@ -13,6 +13,9 @@ Falle?*
 
 ---
 
+> **Windows und noch nie ein Terminal benutzt?** → [WINDOWS.md](WINDOWS.md)
+> führt Schritt für Schritt durch alles, ohne Vorwissen und ohne Git.
+
 ## Schnellstart
 
 ```bash

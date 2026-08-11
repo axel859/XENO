@@ -123,11 +123,10 @@ class ConsoleNotifier:
     """Ausgabe im Terminal."""
 
     def __init__(self, stream=None, color: bool | None = None) -> None:
+        from .report import use_color
+
         self.stream = stream or sys.stdout
-        if color is None:
-            color = hasattr(self.stream, "isatty") and self.stream.isatty()
-            color = color and not os.environ.get("NO_COLOR")
-        self.color = color
+        self.color = use_color(self.stream) if color is None else color
 
     def send(self, alert: Alert) -> None:
         colors = {

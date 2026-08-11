@@ -35,11 +35,48 @@ _MARKS = {
 }
 
 
+_ansi_ready: bool | None = None
+
+
+def enable_ansi() -> bool:
+    """Sorgt dafuer, dass Farbcodes im Terminal auch wirklich Farbe ergeben.
+
+    Unter Windows muss die Konsole das erst freigeschaltet bekommen. Ohne das
+    erscheinen in der alten Eingabeaufforderung statt Farben nur Zeichenfolgen
+    wie ``←[91m`` mitten im Text. Das Ergebnis wird gemerkt, damit die Abfrage
+    nicht bei jeder Zeile erneut laeuft.
+    """
+    global _ansi_ready
+    if _ansi_ready is not None:
+        return _ansi_ready
+
+    if sys.platform != "win32":
+        _ansi_ready = True
+        return True
+
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            _ansi_ready = False
+        else:
+            # 0x0004 = ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            _ansi_ready = bool(kernel32.SetConsoleMode(handle, mode.value | 0x0004))
+    except Exception:  # noqa: BLE001
+        _ansi_ready = False
+    return _ansi_ready
+
+
 def use_color(stream: Any = None) -> bool:
     if os.environ.get("NO_COLOR"):
         return False
     stream = stream or sys.stdout
-    return hasattr(stream, "isatty") and stream.isatty()
+    if not (hasattr(stream, "isatty") and stream.isatty()):
+        return False
+    return enable_ansi()
 
 
 def _paint(text: str, color: str, enabled: bool) -> str:

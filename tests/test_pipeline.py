@@ -241,3 +241,45 @@ class TestBuildReport:
     def test_errors_are_carried_through(self):
         data = make_data(errors=["RPC weg"])
         assert "RPC weg" in build_report(data, Settings()).errors
+
+
+class TestColorHandling:
+    """Unter Windows muessen ANSI-Codes freigeschaltet werden - sonst stehen
+    Zeichenfolgen wie ``←[91m`` mitten in der Ausgabe."""
+
+    def _stream(self, tty: bool):
+        class Stream:
+            def isatty(self):
+                return tty
+
+        return Stream()
+
+    def test_no_color_when_output_is_redirected(self, monkeypatch):
+        import xeno.report as report
+
+        monkeypatch.setattr(report, "_ansi_ready", None)
+        assert report.use_color(self._stream(False)) is False
+
+    def test_no_color_env_wins(self, monkeypatch):
+        import xeno.report as report
+
+        monkeypatch.setenv("NO_COLOR", "1")
+        assert report.use_color(self._stream(True)) is False
+
+    def test_windows_without_console_support_disables_color(self, monkeypatch):
+        import sys
+
+        import xeno.report as report
+
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(report, "_ansi_ready", None)
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        # ctypes.windll gibt es hier nicht - der Zugriff scheitert und
+        # genau dann darf keine Farbe ausgegeben werden.
+        assert report.use_color(self._stream(True)) is False
+
+    def test_result_is_cached(self, monkeypatch):
+        import xeno.report as report
+
+        monkeypatch.setattr(report, "_ansi_ready", True)
+        assert report.enable_ansi() is True
