@@ -125,6 +125,7 @@
   <div class="brand">
     <span class="dot" id="dot"></span>
     <h1>XENO</h1>
+    <button id="bell" hidden onclick="askNotify()" title="Benachrichtigungen erlauben">🔔</button>
     <button id="toggle" style="margin-left:auto" onclick="toggleWatcher()">…</button>
   </div>
   <div class="sub" id="sub">verbinde …</div>
@@ -173,6 +174,90 @@
 const token = new URLSearchParams(location.search).get('token') || '';
 let tab = 'tokens';
 let busy = false;
+
+/* ---- Hinweise bei neuen Meldungen -------------------------------------
+   Der Browser meldet nur, was seit dem letzten Blick dazugekommen ist.
+   Erkannt wird das am Zeitstempel der neuesten Meldung, nicht an ihrer
+   Anzahl - sonst gaebe es keine Meldung mehr, sobald der Ringpuffer voll
+   ist und alte Eintraege hinten herausfallen.                            */
+const BASE_TITLE = 'XENO';
+const LOUD = new Set(['critical_change', 'degraded']);
+let lastAlertAt = 0;
+let primed = false;   // erste Abfrage legt nur den Ausgangsstand fest
+let flashTimer = null;
+let unseen = 0;
+
+function askNotify() {
+  if (!('Notification' in window)) return;
+  Notification.requestPermission().then(updateBell);
+}
+
+function updateBell() {
+  const bell = document.getElementById('bell');
+  bell.hidden = !('Notification' in window) || Notification.permission !== 'default';
+}
+
+function beep(loud) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = loud ? 660 : 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.14, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + (loud ? 0.5 : 0.18));
+    osc.start();
+    osc.stop(ctx.currentTime + (loud ? 0.52 : 0.2));
+    if (loud) setTimeout(() => beep(false), 260);
+  } catch (e) { /* Ton ist Beiwerk, kein Grund für einen Fehler */ }
+}
+
+function flashTitle() {
+  if (flashTimer) return;
+  let on = false;
+  flashTimer = setInterval(() => {
+    on = !on;
+    document.title = on ? `(${unseen}) neue Meldung` : BASE_TITLE;
+  }, 900);
+}
+
+function clearFlash() {
+  if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
+  unseen = 0;
+  document.title = BASE_TITLE;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) clearFlash(); });
+window.addEventListener('focus', clearFlash);
+
+function announce(alerts) {
+  const newest = alerts.length ? Math.max(...alerts.map(a => a.at)) : 0;
+
+  // Beim ersten Laden nur den Ausgangsstand merken, sonst würde der ganze
+  // bisherige Verlauf auf einmal hereinpoltern.
+  if (!primed) { primed = true; lastAlertAt = newest; return; }
+
+  const fresh = alerts.filter(a => a.at > lastAlertAt);
+  lastAlertAt = Math.max(lastAlertAt, newest);
+  if (!fresh.length) return;
+
+  const loud = fresh.some(a => LOUD.has(a.kind));
+  beep(loud);
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    fresh.slice(0, 3).forEach(a => {
+      try {
+        new Notification(`${a.title}: ${a.symbol || a.mint.slice(0, 10)}`, {
+          body: a.lines[0] || '',
+          tag: a.mint,
+          requireInteraction: LOUD.has(a.kind),
+        });
+      } catch (e) { /* manche Browser blocken ohne Service Worker */ }
+    });
+  }
+
+  if (document.hidden) { unseen += fresh.length; flashTitle(); }
+}
 
 function api(path, options = {}) {
   const headers = Object.assign({'Content-Type': 'application/json'}, options.headers || {});
@@ -284,8 +369,11 @@ function refresh() {
     }).catch(() => {});
   }
 
-  if (tab === 'alerts') {
-    api('/api/alerts').then(d => {
+  // Immer abfragen, nicht nur im Meldungs-Tab: sonst gäbe es keinen
+  // Hinweis, während man auf der Tokenliste steht.
+  api('/api/alerts').then(d => {
+    announce(d.alerts);
+    if (tab === 'alerts') {
       document.getElementById('alerts').innerHTML = d.alerts.length
         ? d.alerts.map(a => `<div class="card">
             <span class="when">${ago(a.at)} her</span>
@@ -298,8 +386,8 @@ function refresh() {
             <div class="mint">${esc(a.mint)}</div>
           </div>`).join('')
         : '<div class="empty">Noch keine Meldungen.</div>';
-    }).catch(() => {});
-  }
+    }
+  }).catch(() => {});
 
   if (tab === 'log') {
     api('/api/log').then(d => {
@@ -349,6 +437,7 @@ function checkNow() {
 }
 const recheck = runCheck;
 
+updateBell();
 refresh();
 setInterval(refresh, 5000);
 </script>

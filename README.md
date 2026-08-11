@@ -247,6 +247,42 @@ Gelegenheit.
 Der Zustand liegt in `xeno-state.json`, wird atomar geschrieben und übersteht
 Neustarts, ohne alles erneut zu melden.
 
+### Meldekanäle
+
+Alle sind optional und lassen sich einzeln abschalten. **Ohne jede Einrichtung**
+laufen bereits diese drei:
+
+| Kanal | Erreicht dich | Einrichtung |
+|---|---|---|
+| **Systemmeldung** | am Rechner, auch wenn das Fenster hinten liegt | keine |
+| **Signalton** | am Rechner | keine |
+| **Browser-Hinweis** | solange das Dashboard offen ist, plus Titel-Blinken im Hintergrundtab | einmal auf 🔔 tippen |
+| Konsole | im Terminal | keine |
+| Telegram | überall | Bot anlegen, siehe unten |
+| JSON-Datei | zum späteren Auswerten | `--log-file` |
+
+```bash
+python3 -m xeno serve --only-important   # nur Verschlechterungen und neue kritische Befunde
+python3 -m xeno serve --no-sound         # still
+python3 -m xeno serve --no-desktop       # keine Systemmeldungen
+```
+
+Systemmeldungen nutzen die Bordmittel des Betriebssystems — `notify-send`
+unter Linux, `osascript` unter macOS, PowerShell unter Windows. Kein
+Zusatzmodul, kein Konto, kein fremder Dienst; alles bleibt auf deinem Rechner.
+Unter Linux muss ggf. `sudo apt install libnotify-bin` nachinstalliert werden;
+fehlt es, sagt XENO das beim Start und meldet weiter über die Konsole.
+
+Zwei Vorsichtsmaßnahmen sind eingebaut: Systemmeldungen sind auf eine alle drei
+Sekunden gedrosselt (sonst öffnen sich bei einem Durchlauf acht Fenster
+gleichzeitig), und einen **Ton** gibt es nur bei Verschlechterung oder neuem
+kritischem Befund — neue Kandidaten melden sich still.
+
+**Wann Telegram sinnvoll wird:** wenn der Bot dauerhaft auf einem Server läuft
+und du nicht davor sitzt. Solange er nur läuft, während dein PC an ist,
+reichen Systemmeldung und Ton — ist der Rechner aus, gibt es ohnehin nichts zu
+melden.
+
 ### Telegram einrichten
 
 Ein Watcher ist nur sinnvoll, wenn dich die Meldung erreicht, während du nicht
@@ -354,7 +390,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 150 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 172 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
@@ -389,6 +425,7 @@ xeno/
   watcher.py       Überwachungsschleife und Meldeentscheidung
   watchstate.py    Zustand, Watchlist, Wiederholungsintervalle
   notify.py        Konsole, Telegram, JSON-Log
+  desktop.py       Systemmeldungen und Signalton
   server.py        Dashboard-Server und JSON-API
   web/index.html   die Oberfläche
 ```

@@ -136,9 +136,28 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def _build_notifier(args: argparse.Namespace):
     """Stellt die Meldekanaele zusammen. Konsole ist immer dabei."""
+    from .desktop import DesktopNotifier
     from .notify import ConsoleNotifier, JsonlNotifier, MultiNotifier, TelegramNotifier
 
     channels = [ConsoleNotifier()]
+
+    if not args.no_desktop:
+        desktop = DesktopNotifier(
+            sound=not args.no_sound, only_important=args.only_important
+        )
+        if desktop.available:
+            channels.append(desktop)
+            print("  Systemmeldungen aktiv", file=sys.stderr)
+        else:
+            print(
+                "  Systemmeldungen nicht verfuegbar"
+                + (
+                    " (unter Linux: sudo apt install libnotify-bin)"
+                    if sys.platform.startswith("linux")
+                    else ""
+                ),
+                file=sys.stderr,
+            )
 
     if not args.no_telegram:
         telegram = TelegramNotifier.from_env()
@@ -237,6 +256,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
             settings=settings,
             state=state,
             use_telegram=not args.no_telegram,
+            use_desktop=not args.no_desktop,
+            sound=not args.no_sound,
+            only_important=args.only_important,
         )
     except OSError as exc:
         print(f"Server konnte nicht starten: {exc}", file=sys.stderr)
@@ -369,6 +391,18 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--json", action="store_true", help="Ausgabe als JSON")
         target.add_argument("-v", "--verbose", action="store_true", help="alle Befunde zeigen")
 
+    def add_alerting(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--no-desktop", action="store_true", help="keine Systemmeldungen"
+        )
+        target.add_argument("--no-sound", action="store_true", help="kein Signalton")
+        target.add_argument(
+            "--only-important",
+            action="store_true",
+            help="nur bei Verschlechterung und neuen kritischen Befunden melden",
+        )
+        target.add_argument("--no-telegram", action="store_true", help="Telegram nicht nutzen")
+
     def add_discovery(target: argparse.ArgumentParser) -> None:
         target.add_argument("--pages", type=int, default=1, help="Seiten pro Quelle (Standard 1)")
         target.add_argument("--new-only", action="store_true", help="nur frisch erstellte Pools")
@@ -421,7 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_watch.add_argument("--state-file", help="Pfad der Zustandsdatei")
     p_watch.add_argument("--log-file", help="jede Meldung als JSON-Zeile anhaengen")
-    p_watch.add_argument("--no-telegram", action="store_true", help="Telegram nicht nutzen")
+    add_alerting(p_watch)
     p_watch.add_argument(
         "--no-trade-test", action="store_true", help="Kauf-/Verkaufstest ueberspringen"
     )
@@ -458,7 +492,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--interval", type=float, default=60.0, help="Sekunden je Durchlauf (60)")
     p_serve.add_argument("--budget", type=int, default=8, help="max. Tiefpruefungen je Durchlauf (8)")
     p_serve.add_argument("--state-file", help="Pfad der Zustandsdatei")
-    p_serve.add_argument("--no-telegram", action="store_true", help="Telegram nicht nutzen")
+    add_alerting(p_serve)
     p_serve.add_argument(
         "--no-autostart", action="store_true", help="Watcher nicht automatisch starten"
     )

@@ -418,12 +418,25 @@ def build_server(
     state: WatchState | None = None,
     auth_token: str | None = None,
     use_telegram: bool = True,
+    use_desktop: bool = True,
+    sound: bool = True,
+    only_important: bool = False,
 ) -> tuple[ThreadingHTTPServer, AppState, WatcherThread]:
     settings = settings or Settings.from_env()
     state = state or WatchState()
     app = AppState(settings, state)
 
     channels: list[Any] = [ConsoleNotifier()]
+
+    if use_desktop:
+        from .desktop import DesktopNotifier
+
+        desktop = DesktopNotifier(
+            sound=sound, only_important=only_important, on_error=app.log
+        )
+        if desktop.available:
+            channels.append(desktop)
+
     if use_telegram:
         telegram = TelegramNotifier.from_env(on_error=app.log)
         if telegram is not None:
