@@ -68,6 +68,10 @@ XENO-claude-bot-programming-ygi80v
 Der richtige Ordner ist der, in dem **`README.md`** und der Ordner **`xeno`**
 nebeneinander liegen.
 
+> `README.md` wird **nicht geöffnet** und nicht angeklickt. Sie dient nur als
+> Erkennungszeichen: siehst du sie, bist du im richtigen Ordner. Auch der
+> Ordner `xeno` bleibt zu — man arbeitet immer in der Ebene darüber.
+
 ### Drei Wege — einer davon klappt sicher
 
 **Weg 1 — Rechtsklick.** Im Ordner auf eine leere Stelle rechtsklicken:
