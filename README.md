@@ -24,6 +24,23 @@ python3 -m xeno scan
 Keine Abhängigkeiten nötig — alles läuft mit der Python-Standardbibliothek
 (ab Python 3.10).
 
+### Geführte Einrichtung
+
+Für Telegram-Meldungen und den optionalen RPC-Key gibt es ein Skript, das
+durch alles durchfragt und die `.env` selbst anlegt:
+
+```bash
+bash setup.sh
+```
+
+Es prüft die Python-Version, testet den Start, richtet Telegram ein (inklusive
+Ermitteln der Chat-ID) und fragt nach einem Helius-Key. Alles ist
+überspringbar, mehrfaches Ausführen ist unschädlich.
+
+**Windows:** in der PowerShell läuft `bash` nicht. Entweder Git Bash benutzen
+(kommt mit [Git für Windows](https://git-scm.com/download/win)), oder WSL —
+oder die `.env` von Hand anlegen, siehe [Konfiguration](#konfiguration).
+
 ```bash
 python3 -m xeno check <mint-adresse>     # einen Token gründlich prüfen
 python3 -m xeno scan                     # suchen, filtern, prüfen
