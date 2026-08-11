@@ -130,6 +130,41 @@ class TokenCandidate:
         return self.volume_h1_usd / self.liquidity_usd
 
     @property
+    def momentum(self) -> int:
+        """Schwung von 0 bis 100 - **beschreibend, nicht bewertend**.
+
+        Bewusst getrennt vom Risikourteil, weil beides gegenlaeufig sein kann:
+        ein Token mit konzentrierter Supply und koordinierten Wallets steigt
+        oft besonders schnell - genau weil ihn jemand kontrolliert und stuetzt.
+        Ein hoher Wert sagt also, dass gerade Bewegung drin ist, und nichts
+        darueber, wie es ausgeht.
+
+        50 ist neutral. Darueber: Kurs steigt und es wird mehr gekauft als
+        verkauft. Darunter: Kurs faellt oder es wird verteilt.
+        """
+        score = 50.0
+
+        if self.price_change_h1_pct is not None:
+            # +200% ergibt den vollen Zuschlag, danach flacht es ab - der
+            # Unterschied zwischen 200% und 900% sagt wenig ueber den Schwung.
+            score += max(-35.0, min(35.0, self.price_change_h1_pct / 6.0))
+
+        ratio = self.buy_sell_ratio
+        if ratio is not None:
+            capped = 5.0 if ratio == float("inf") else min(ratio, 5.0)
+            score += max(-10.0, min(10.0, (capped - 1.0) * 4.0))
+
+        buyers = self.buyers_h1 or 0
+        if buyers >= 100:
+            score += 5.0
+        elif buyers >= 30:
+            score += 3.0
+        elif buyers < 5:
+            score -= 5.0
+
+        return int(max(0.0, min(100.0, score)))
+
+    @property
     def traction(self) -> float:
         """Mass fuer frueh einsetzende Beteiligung.
 
@@ -162,6 +197,8 @@ class TokenCandidate:
         data = asdict(self)
         data["created_at"] = self.created_at.isoformat() if self.created_at else None
         data["age_minutes"] = self.age_minutes
+        data["momentum"] = self.momentum
+        data["traction"] = self.traction
         return data
 
 

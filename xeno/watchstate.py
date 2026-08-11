@@ -84,6 +84,21 @@ class TokenState:
     #: Endgueltig aussortiert - wird nicht mehr geprueft (ausser auf der Watchlist).
     dead: bool = False
 
+    # -- Nachverfolgung des Kursverlaufs ---------------------------------
+    #: Zeitpunkt und Kurs beim ersten Deep-Check. Alles Weitere wird daran
+    #: gemessen.
+    baseline_at: float = 0.0
+    baseline_price_usd: float | None = None
+    baseline_fdv_usd: float | None = None
+    #: Urteil beim ersten Check. Bewusst getrennt vom aktuellen Urteil:
+    #: die Frage lautet "wie entwickelt sich, was XENO damals so eingestuft
+    #: hat" - ein spaeter geaendertes Urteil wuerde das Ergebnis verfaelschen.
+    first_verdict: str = ""
+    #: Vielfaches des Ausgangskurses je Zeitpunkt, z.B. {"1h": 2.4}.
+    outcomes: dict[str, float] = field(default_factory=dict)
+    #: Schwung beim ersten Check - fuer die spaetere Auswertung.
+    first_momentum: int = 0
+
     @property
     def verdict_enum(self) -> Verdict:
         try:
@@ -239,8 +254,19 @@ class WatchState:
             f.code for f in report.findings if f.severity.value == "critical"
         ]
 
-        if report.candidate and report.candidate.created_at:
-            state.created_at = report.candidate.created_at.timestamp()
+        candidate = report.candidate
+        if candidate and candidate.created_at:
+            state.created_at = candidate.created_at.timestamp()
+
+        # Ausgangswerte nur einmal festhalten - beim ersten Urteil. Spaetere
+        # Pruefungen duerfen den Bezugspunkt nicht verschieben, sonst misst
+        # man am Ende gegen einen mitgewanderten Kurs.
+        if not state.baseline_at and candidate and candidate.price_usd:
+            state.baseline_at = now
+            state.baseline_price_usd = candidate.price_usd
+            state.baseline_fdv_usd = candidate.fdv_usd
+            state.first_verdict = report.verdict.value
+            state.first_momentum = candidate.momentum
 
         # Ein Token mit kritischem Befund aendert sich praktisch nie zum
         # Guten. Weitere Pruefungen waeren verschwendetes Budget - es sei

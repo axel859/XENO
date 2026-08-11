@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -391,6 +392,75 @@ def cmd_telegram_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stats(args: argparse.Namespace) -> int:
+    """Zeigt, was aus den geprueften Token tatsaechlich geworden ist."""
+    from .follow import HORIZONS, summarise
+    from .watchstate import WatchState
+
+    state = WatchState(args.state_file)
+    entries = [
+        s
+        for s in state.tokens.values()
+        if s.first_verdict and (s.outcomes or s.baseline_at)
+    ]
+
+    if not entries:
+        print("Noch keine Daten.\n")
+        print("XENO merkt sich ab jetzt zu jedem geprueften Token den Kurs und")
+        print("schaut nach 15min, 1h, 6h und 24h nach. Lass den Bot ein paar")
+        print("Stunden laufen, dann steht hier die Auswertung.")
+        return 0
+
+    summary = summarise(entries)
+    if not summary:
+        wartend = len(entries)
+        print(f"{wartend} Token werden beobachtet, aber noch keine Messung faellig.")
+        print("Die erste kommt 15 Minuten nach der jeweiligen Pruefung.")
+        return 0
+
+    if args.json:
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
+
+    print("Was ist aus den geprueften Token geworden?")
+    print("Gemessen ab dem ersten Urteil, Median ueber alle Token je Gruppe.\n")
+
+    order = ["OK", "CAUTION", "RISKY", "AVOID", "UNKNOWN"]
+    header = f"{'URTEIL':9}{'ZEITPUNKT':>10}{'ANZAHL':>8}{'MEDIAN':>10}{'>= 2x':>8}{'~ NULL':>8}{'BESTE':>9}"
+    print(header)
+    print("-" * len(header))
+
+    for verdict in order:
+        per_horizon = summary.get(verdict)
+        if not per_horizon:
+            continue
+        for label in HORIZONS:
+            row = per_horizon.get(label)
+            if not row:
+                continue
+            print(
+                f"{verdict:9}{label:>10}{row['count']:>8}"
+                f"{row['median']:>9.2f}x{row['winners_pct']:>7.0f}%"
+                f"{row['dead_pct']:>7.0f}%{row['best']:>8.1f}x"
+            )
+        print()
+
+    total = sum(len(v) for v in summary.values())
+    print(f"Grundlage: {total} Urteile mit mindestens einer Messung.")
+    print(
+        "\nMEDIAN heisst: die Haelfte lief besser, die Haelfte schlechter.\n"
+        "Bewusst nicht der Durchschnitt - ein einzelner Hunderter wuerde\n"
+        "sonst zwanzig Totalverluste daneben unsichtbar machen.\n"
+        "'~ NULL' = auf ein Zehntel oder weniger gefallen."
+    )
+    if total < 50:
+        print(
+            f"\nAchtung: {total} Urteile sind noch wenig. Erst ab einigen hundert\n"
+            "sind die Unterschiede zwischen den Gruppen belastbar."
+        )
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     settings = Settings.from_env()
     rpc = settings.rpc_url
@@ -563,6 +633,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_telegram = sub.add_parser("telegram-setup", help="Telegram einrichten und testen")
     p_telegram.add_argument("--token", help="Bot-Token (sonst aus TELEGRAM_BOT_TOKEN)")
     p_telegram.set_defaults(func=cmd_telegram_setup)
+
+    p_stats = sub.add_parser(
+        "stats",
+        help="auswerten, was aus den geprueften Token geworden ist",
+        description="Zeigt je Urteil, wie sich die Token danach entwickelt haben. "
+        "Beantwortet die Frage, ob die Bewertungen ueberhaupt etwas taugen.",
+    )
+    p_stats.add_argument("--state-file", help="Pfad der Zustandsdatei")
+    p_stats.add_argument("--json", action="store_true", help="Ausgabe als JSON")
+    p_stats.set_defaults(func=cmd_stats)
 
     p_config = sub.add_parser("config", help="aktive Konfiguration anzeigen")
     p_config.set_defaults(func=cmd_config)

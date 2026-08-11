@@ -93,6 +93,12 @@ def _money(value: float | None) -> str:
     return f"${value:.0f}"
 
 
+def _momentum_bar(value: int) -> str:
+    """Kleine Balkenanzeige. 50 ist neutral."""
+    filled = round(value / 10)
+    return "[" + "#" * filled + "." * (10 - filled) + "]"
+
+
 def _age(minutes: float | None) -> str:
     if minutes is None:
         return "n/a"
@@ -116,6 +122,10 @@ def format_report(report: RiskReport, verbose: bool = False, color: bool | None 
 
     candidate = report.candidate
     if candidate:
+        lines.append(
+            f"  Schwung: {candidate.momentum}/100  {_momentum_bar(candidate.momentum)}"
+            "   (beschreibt Bewegung, nicht Qualitaet)"
+        )
         lines.append(
             f"  Markt: Liq {_money(candidate.liquidity_usd)}"
             f" | Vol 1h {_money(candidate.volume_h1_usd)}"
@@ -180,12 +190,14 @@ def format_report_line(report: RiskReport, color: bool | None = None) -> str:
         ),
         None,
     )
+    momentum = report.candidate.momentum if report.candidate else None
     return (
         f"{_paint(f'{verdict.value:8}', _COLORS[verdict], enabled)} "
         f"{report.score:3d}  {title:14.14} "
         f"liq {_money(liq):>8}  "
         f"top10 {f'{top:.0f}%' if top is not None else '  n/a':>5}  "
-        f"{worst.message[:58] if worst else 'keine Auffaelligkeiten'}"
+        f"schwung {momentum if momentum is not None else '--':>3}  "
+        f"{worst.message[:44] if worst else 'keine Auffaelligkeiten'}"
     )
 
 

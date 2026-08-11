@@ -49,6 +49,7 @@ python3 -m xeno serve                    # Dashboard im Browser + Watcher
 python3 -m xeno check <mint-adresse>     # einen Token gründlich prüfen
 python3 -m xeno scan                     # suchen, filtern, prüfen
 python3 -m xeno watch                    # überwachen, nur Konsole/Telegram
+python3 -m xeno stats                    # auswerten, was aus den Urteilen wurde
 python3 -m xeno screen                   # nur Vorfilter, ohne Deep-Check
 python3 -m xeno config                   # aktive Einstellungen zeigen
 ```
@@ -217,6 +218,67 @@ führen dann zu `CAUTION` statt `OK`, nie zu einem falschen Freibrief.
 Und: `early` lässt deutlich mehr Kandidaten durch. Ohne eigenen RPC-Key wird
 das Prüfbudget schnell knapp — **hier lohnt sich der kostenlose Helius-Key
 wirklich.**
+
+---
+
+## Taugen die Urteile? — `xeno stats`
+
+Ein Risikourteil ohne Rückmeldung bleibt eine Behauptung. XENO merkt sich
+deshalb zu jedem geprüften Token den Ausgangskurs und schaut nach **15 min,
+1 h, 6 h und 24 h** nach, was daraus wurde.
+
+```bash
+python3 -m xeno stats
+```
+
+```
+URTEIL    ZEITPUNKT  ANZAHL    MEDIAN   >= 2x  ~ NULL    BESTE
+--------------------------------------------------------------
+OK              15m       3     0.99x      0%      0%     1.2x
+OK               1h       3     0.99x      0%      0%     1.2x
+
+AVOID           15m       2     0.89x      0%      0%     1.0x
+AVOID            1h       2     0.89x      0%      0%     1.0x
+```
+
+Gemessen wird gegen das **erste** Urteil, nicht gegen das aktuelle — sonst
+wanderte der Bezugspunkt mit und die Statistik hätte im Nachhinein immer
+recht.
+
+Zwei bewusste Entscheidungen:
+
+- **Median statt Durchschnitt.** Ein einzelner Token, der sich verhundertfacht,
+  würde einen Durchschnitt so verzerren, dass zwanzig Totalverluste daneben
+  unsichtbar bleiben.
+- **Verschwundener Markt zählt als 0.** Findet sich kein Paar mehr, ist das
+  keine fehlende Messung, sondern das Ergebnis — sonst fiele genau der
+  schlimmste Ausgang aus der Auswertung.
+
+Der Abruf kostet nichts vom Prüfbudget: DexScreener liefert 30 Kurse pro
+Anfrage, ohne RPC.
+
+## Risiko ≠ Potenzial
+
+Beides wird **getrennt** angezeigt, weil es gegenläufig sein kann:
+
+```
+BOT   [AVOID]  Score 0/100
+  Schwung: 88/100  [#########.]   (beschreibt Bewegung, nicht Qualität)
+```
+
+Was einen Token steigen lässt, ist oft genau das, was ihn gefährlich macht:
+
+| Merkmal | Wirkung auf den Kurs | Wirkung auf das Risiko |
+|---|---|---|
+| Wenig freier Umlauf | Kleine Käufe bewegen viel | Ein Wallet kann alles kippen |
+| Koordinierte Wallets | Sauberer Chart, Aufmerksamkeit | Die Gruppe bestimmt das Ende |
+| Team stützt den Kurs | Wirkt „stabil nach oben" | Stützt nur, bis es sich lohnt auszusteigen |
+
+Umgekehrt sind breit gestreute Token oft langweilig — **weil sie niemand
+kontrolliert**. Sicherheit und Bewegungslosigkeit hängen zusammen.
+
+Der Schwung-Wert ist deshalb ausdrücklich **beschreibend, nicht empfehlend**:
+er sagt, dass gerade Bewegung drin ist, und nichts darüber, wie es endet.
 
 ---
 
@@ -493,7 +555,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 218 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 241 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

@@ -44,6 +44,8 @@ class CycleStats:
     passed_screen: int = 0
     checked: int = 0
     alerts: int = 0
+    #: Nachtraeglich gemessene Kursverlaeufe frueher gepruefter Token.
+    measured: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -125,6 +127,7 @@ class Watcher:
         discovery: Discovery | None = None,
         analyzer: TokenAnalyzer | None = None,
         log=None,
+        tracker=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.state = state or WatchState()
@@ -132,6 +135,11 @@ class Watcher:
         self.discovery = discovery or Discovery()
         self.analyzer = analyzer or TokenAnalyzer(self.settings)
         self.log = log or (lambda message: print(f"  {message}", file=sys.stderr))
+        if tracker is None:
+            from .follow import OutcomeTracker
+
+            tracker = OutcomeTracker(self.state)
+        self.tracker = tracker
 
     # -- Ein Durchlauf ----------------------------------------------------
 
@@ -258,6 +266,13 @@ class Watcher:
                 self.state.mark_alerted(mint, report.verdict)
                 stats.alerts += 1
 
+        # Nachverfolgung: was ist aus frueher geprueften Token geworden?
+        # Kostet keine RPC-Anfragen und konkurriert damit nicht mit dem
+        # Pruefbudget - DexScreener liefert 30 Kurse pro Request.
+        if self.tracker is not None:
+            follow = self.tracker.run(time.time(), on_error=stats.errors.append)
+            stats.measured = follow.measured
+
         try:
             self.state.save()
         except OSError as exc:
@@ -313,6 +328,7 @@ class Watcher:
                         f"Durchlauf {cycles + 1}: {stats.discovered} gefunden, "
                         f"{stats.passed_screen} gefiltert, {stats.checked} geprueft, "
                         f"{stats.alerts} gemeldet"
+                        + (f", {stats.measured} nachverfolgt" if stats.measured else "")
                     )
                     for error in stats.errors:
                         self.log(f"! {error}")

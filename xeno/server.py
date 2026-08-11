@@ -394,7 +394,9 @@ class Handler(BaseHTTPRequestHandler):
         for entry in entries:
             report = reports.get(entry["mint"])
             if report:
-                entry["market"] = report.get("market")
+                market = report.get("market") or {}
+                entry["market"] = market
+                entry["momentum"] = market.get("momentum")
                 entry["holders"] = report.get("holders")
                 entry["top_findings"] = [
                     f

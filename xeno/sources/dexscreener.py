@@ -48,6 +48,36 @@ class DexScreener:
         payload = self.http.get(f"{BASE_URL}/latest/dex/tokens/{mint}")
         return (payload or {}).get("pairs") or []
 
+    def prices(self, mints: list[str], batch_size: int = 30) -> dict[str, float]:
+        """Aktuelle Preise fuer viele Token auf einmal.
+
+        Die API nimmt mehrere Adressen kommagetrennt entgegen - damit kostet
+        die Nachverfolgung von 100 Token vier Requests statt hundert.
+
+        Liegen zu einem Mint mehrere Paare vor, gewinnt das mit der hoechsten
+        Liquiditaet; dort entsteht der belastbare Kurs.
+        """
+        result: dict[str, float] = {}
+        best_liquidity: dict[str, float] = {}
+
+        for start in range(0, len(mints), batch_size):
+            chunk = mints[start : start + batch_size]
+            if not chunk:
+                continue
+            payload = self.http.get(f"{BASE_URL}/latest/dex/tokens/{','.join(chunk)}")
+            for pair in (payload or {}).get("pairs") or []:
+                if pair.get("chainId") != self.chain:
+                    continue
+                mint = (pair.get("baseToken") or {}).get("address")
+                price = _to_float(pair.get("priceUsd"))
+                if not mint or price is None:
+                    continue
+                liquidity = _to_float((pair.get("liquidity") or {}).get("usd")) or 0.0
+                if mint not in result or liquidity > best_liquidity.get(mint, -1.0):
+                    result[mint] = price
+                    best_liquidity[mint] = liquidity
+        return result
+
     def best_pair(self, mint: str) -> dict[str, Any] | None:
         """Das Paar mit der hoechsten Liquiditaet - dort wird real gehandelt."""
         pairs = [p for p in self.pairs_for_token(mint) if p.get("chainId") == self.chain]
