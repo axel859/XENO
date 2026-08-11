@@ -11,6 +11,7 @@ Nur Standardbibliothek - keine externen Abhaengigkeiten.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -22,6 +23,31 @@ USER_AGENT = "xeno/0.1 (+https://github.com/axel859/XENO)"
 
 #: Statuscodes, bei denen ein erneuter Versuch sinnvoll ist.
 RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504, 520, 522, 524})
+
+#: Query-Parameter, die ein Geheimnis enthalten koennen.
+_SECRET_PARAMS = frozenset({"api-key", "apikey", "api_key", "key", "token", "access_token"})
+
+#: Telegram legt den Bot-Token in den Pfad: /bot<id>:<secret>/methode
+_TELEGRAM_TOKEN = re.compile(r"/bot\d+:[\w-]+")
+
+
+def redact_url(url: str) -> str:
+    """Entfernt Zugangsdaten aus einer URL, bevor sie in einer Meldung landet.
+
+    Sowohl der Helius-RPC (``?api-key=...``) als auch die Telegram-API
+    (``/bot123:ABC/...``) tragen ihr Geheimnis in der URL. Ohne diese
+    Bereinigung stuende es in jeder Fehlermeldung, in jedem Log und in jedem
+    Screenshot, den man zum Debuggen weitergibt.
+    """
+    url = _TELEGRAM_TOKEN.sub("/bot***", url)
+    head, sep, query = url.partition("?")
+    if not sep:
+        return url
+    parts = []
+    for chunk in query.split("&"):
+        name, delim, _ = chunk.partition("=")
+        parts.append(f"{name}=***" if name.lower() in _SECRET_PARAMS and delim else chunk)
+    return f"{head}?{'&'.join(parts)}"
 
 
 class HttpError(RuntimeError):
@@ -129,14 +155,16 @@ class HttpClient:
                 if exc.code in RETRY_STATUS and attempt < self.max_retries - 1:
                     self._sleep_for_retry(attempt, exc.headers.get("Retry-After"))
                     continue
-                raise HttpError(f"HTTP {exc.code} bei {url}", status=exc.code) from exc
+                raise HttpError(
+                    f"HTTP {exc.code} bei {redact_url(url)}", status=exc.code
+                ) from exc
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = exc
                 if attempt < self.max_retries - 1:
                     self._sleep_for_retry(attempt, None)
                     continue
 
-        raise HttpError(f"Request an {url} fehlgeschlagen: {last_error}")
+        raise HttpError(f"Request an {redact_url(url)} fehlgeschlagen: {last_error}")
 
     def get(self, url: str, **kwargs: Any) -> Any:
         return self.request(url, method="GET", **kwargs)

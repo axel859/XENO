@@ -17,6 +17,7 @@ from .analyzer import TokenAnalyzer
 from .config import PUBLIC_RPC, Settings
 from .discovery import Discovery
 from .models import Verdict
+from .net import HttpError
 from .pipeline import Scanner
 from .report import (
     format_report,
@@ -233,7 +234,21 @@ def cmd_telegram_setup(args: argparse.Namespace) -> int:
         )
         return 1
 
-    chats = telegram_discover_chat_id(token)
+    try:
+        chats = telegram_discover_chat_id(token)
+    except HttpError as exc:
+        if exc.status == 401:
+            print(
+                "Telegram lehnt den Token ab (401).\n\n"
+                "  - Vollstaendig kopiert? Der Token sieht aus wie\n"
+                "    123456789:AAF-abcdefghijklmnopqrstuvwxyz123456789\n"
+                "  - Kein Leerzeichen und keine Anfuehrungszeichen in der .env\n"
+                "  - Notfalls bei @BotFather mit /revoke einen neuen erzeugen"
+            )
+        else:
+            print(f"Telegram nicht erreichbar: {exc}")
+        return 1
+
     if not chats:
         print(
             "Bot erreichbar, aber keine Chats gefunden.\n"

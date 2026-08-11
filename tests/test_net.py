@@ -14,7 +14,7 @@ import urllib.error
 
 import pytest
 
-from xeno.net import HttpClient, HttpError, RateLimiter, RpcError, SolanaRpc
+from xeno.net import HttpClient, HttpError, RateLimiter, RpcError, SolanaRpc, redact_url
 
 
 class FakeResponse(io.BytesIO):
@@ -50,6 +50,40 @@ def patch_urlopen(monkeypatch):
         return calls
 
     return install
+
+
+class TestRedaction:
+    """Zugangsdaten stehen bei Helius und Telegram in der URL - sie duerfen
+    nicht in Fehlermeldungen, Logs oder Screenshots landen."""
+
+    def test_removes_telegram_bot_token(self):
+        result = redact_url("https://api.telegram.org/bot7891234:AAF-geheim_xyz/getUpdates")
+        assert "geheim" not in result
+        assert result == "https://api.telegram.org/bot***/getUpdates"
+
+    def test_removes_rpc_api_key(self):
+        result = redact_url("https://mainnet.helius-rpc.com/?api-key=abc123-secret")
+        assert "abc123" not in result
+
+    def test_keeps_harmless_parameters(self):
+        url = "https://api.example.com/x?limit=5&amount=100"
+        assert redact_url(url) == url
+
+    def test_redacts_only_the_secret_parameter(self):
+        result = redact_url("https://x.test/?limit=5&api-key=geheim&page=2")
+        assert "limit=5" in result and "page=2" in result and "geheim" not in result
+
+    def test_url_without_query_is_unchanged(self):
+        assert redact_url("https://x.test/a/b") == "https://x.test/a/b"
+
+    def test_secret_never_reaches_the_error_message(self, patch_urlopen, monkeypatch):
+        monkeypatch.setattr(time, "sleep", lambda *_: None)
+        patch_urlopen([http_error(401)])
+        with pytest.raises(HttpError) as exc:
+            HttpClient(rate_limit=0, max_retries=1).get(
+                "https://mainnet.helius-rpc.com/?api-key=streng-geheim"
+            )
+        assert "streng-geheim" not in str(exc.value)
 
 
 class TestRateLimiter:
