@@ -19,11 +19,28 @@ PUBLIC_RPC = "https://api.mainnet-beta.solana.com"
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
-    """Liest KEY=VALUE-Zeilen in os.environ, ohne bestehende Werte zu ueberschreiben."""
+    """Liest KEY=VALUE-Zeilen in os.environ, ohne bestehende Werte zu ueberschreiben.
+
+    Gelesen wird als ``utf-8-sig``: Windows-Werkzeuge wie Notepad oder
+    ``Out-File`` setzen gern eine unsichtbare Byte-Order-Mark an den
+    Dateianfang. Ohne diese Behandlung hiesse der erste Schluessel
+    ``\\ufeffHELIUS_API_KEY`` statt ``HELIUS_API_KEY`` - die Datei saehe
+    voellig richtig aus, der Wert waere aber wirkungslos.
+    """
     p = Path(path)
     if not p.is_file():
         return
-    for raw in p.read_text(encoding="utf-8").splitlines():
+    try:
+        content = p.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        # Manche Editoren speichern als UTF-16. Lieber einen zweiten Versuch
+        # als eine unerklaerlich wirkungslose Konfiguration.
+        try:
+            content = p.read_text(encoding="utf-16")
+        except (UnicodeDecodeError, OSError):
+            return
+
+    for raw in content.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

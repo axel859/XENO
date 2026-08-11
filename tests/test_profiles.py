@@ -152,3 +152,56 @@ class TestSettingsIntegration:
             ESTABLISHED.screen.min_liquidity_usd > EARLY.screen.min_liquidity_usd
         )
         assert ESTABLISHED.screen.max_age_hours > EARLY.screen.max_age_hours
+
+
+class TestDotenvRobustness:
+    """Die .env wird unter Windows haeufig mit Notepad oder Out-File angelegt.
+    Beide setzen unsichtbare Zeichen an den Dateianfang - ohne Behandlung
+    heisst der erste Schluessel dann nicht so, wie er aussieht."""
+
+    def _load(self, tmp_path, monkeypatch, data: bytes):
+        env = tmp_path / ".env"
+        env.write_bytes(data)
+        monkeypatch.delenv("HELIUS_API_KEY", raising=False)
+        from xeno.config import load_dotenv
+
+        load_dotenv(env)
+        import os
+
+        return os.environ.get("HELIUS_API_KEY")
+
+    def test_plain_utf8(self, tmp_path, monkeypatch):
+        assert self._load(tmp_path, monkeypatch, b"HELIUS_API_KEY=abc123\n") == "abc123"
+
+    def test_utf8_with_bom(self, tmp_path, monkeypatch):
+        """Genau der Windows-Fall: sieht richtig aus, waere aber wirkungslos."""
+        assert (
+            self._load(tmp_path, monkeypatch, b"\xef\xbb\xbfHELIUS_API_KEY=abc123\n")
+            == "abc123"
+        )
+
+    def test_utf16(self, tmp_path, monkeypatch):
+        data = "HELIUS_API_KEY=abc123\n".encode("utf-16")
+        assert self._load(tmp_path, monkeypatch, data) == "abc123"
+
+    def test_windows_line_endings(self, tmp_path, monkeypatch):
+        assert self._load(tmp_path, monkeypatch, b"HELIUS_API_KEY=abc123\r\n") == "abc123"
+
+    def test_quotes_are_stripped(self, tmp_path, monkeypatch):
+        assert self._load(tmp_path, monkeypatch, b'HELIUS_API_KEY="abc123"\n') == "abc123"
+
+    def test_existing_environment_wins(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HELIUS_API_KEY", "aus-der-umgebung")
+        env = tmp_path / ".env"
+        env.write_bytes(b"HELIUS_API_KEY=aus-der-datei\n")
+        from xeno.config import load_dotenv
+
+        load_dotenv(env)
+        import os
+
+        assert os.environ["HELIUS_API_KEY"] == "aus-der-umgebung"
+
+    def test_missing_file_is_fine(self, tmp_path):
+        from xeno.config import load_dotenv
+
+        load_dotenv(tmp_path / "gibtsnicht")
