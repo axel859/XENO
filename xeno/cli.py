@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 
@@ -249,10 +250,20 @@ def cmd_serve(args: argparse.Namespace) -> int:
     settings = _apply_overrides(Settings.from_env(), args)
     state = WatchState(args.state_file)
 
+    token_override = args.token or os.environ.get("XENO_WEB_TOKEN", "").strip() or None
+    if token_override and len(token_override) < 6:
+        print(
+            "Das Zugangswort ist sehr kurz. Mindestens 6 Zeichen waehlen -\n"
+            "sonst kann es im Netzwerk zu leicht erraten werden.",
+            file=sys.stderr,
+        )
+        return 1
+
     try:
         httpd, app, watcher_thread = build_server(
             host=args.host,
             port=args.port,
+            auth_token=token_override,
             settings=settings,
             state=state,
             use_telegram=not args.no_telegram,
@@ -492,6 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--interval", type=float, default=60.0, help="Sekunden je Durchlauf (60)")
     p_serve.add_argument("--budget", type=int, default=8, help="max. Tiefpruefungen je Durchlauf (8)")
     p_serve.add_argument("--state-file", help="Pfad der Zustandsdatei")
+    p_serve.add_argument(
+        "--token",
+        help="eigenes Zugangswort statt eines zufaelligen (leichter am Handy "
+        "einzutippen), mindestens 6 Zeichen",
+    )
     add_alerting(p_serve)
     p_serve.add_argument(
         "--no-autostart", action="store_true", help="Watcher nicht automatisch starten"

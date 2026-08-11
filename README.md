@@ -157,6 +157,17 @@ Vom Handy im WLAN:   http://192.168.1.42:8000/?token=xxx
 Den Link am Handy öffnen, dann im Browser **Zum Startbildschirm hinzufügen** —
 danach hat XENO ein eigenes Icon und sieht aus wie eine App.
 
+Das Abtippen des Zufalls-Tokens ist am Handy lästig. Deshalb lässt sich ein
+eigenes Wort setzen — dann muss man es nur einmal eingeben und kann die Seite
+danach als Lesezeichen behalten:
+
+```bash
+python3 -m xeno serve --lan --token meinbot123
+```
+
+Es sind mindestens 6 Zeichen nötig; kürzere lehnt XENO ab. Alternativ dauerhaft
+über `XENO_WEB_TOKEN` in der `.env`.
+
 Sobald der Server nicht mehr nur auf dem eigenen Rechner lauscht, wird
 automatisch ein Zugriffs-Token verlangt. Ohne das könnte jedes Gerät im selben
 Netz die Watchlist ändern oder Prüfungen auslösen. Der Token steckt im
