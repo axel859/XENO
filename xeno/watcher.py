@@ -207,12 +207,23 @@ class Watcher:
             candidates = self.discovery.collect(
                 include_new=profile.include_new if profile else True,
                 include_trending=profile.include_trending if profile else True,
-                pages=profile.pages if profile else 1,
+                # Im Dauerbetrieb bewusst weniger Seiten als bei einem
+                # einmaligen Scan - sonst sperrt die kostenlose API nach
+                # wenigen Durchlaeufen.
+                pages=profile.watch_pages if profile else 1,
+                on_error=stats.errors.append,
             )
             stats.discovered = len(candidates)
         except Exception as exc:  # noqa: BLE001
             stats.errors.append(f"Discovery fehlgeschlagen: {exc}")
             candidates = []
+
+        # Null Kandidaten ohne gemeldeten Fehler waere frueher stumm
+        # geblieben - genau der Fall, der wie ein defekter Bot aussieht.
+        if not candidates and not stats.errors:
+            stats.errors.append(
+                "Keine Kandidaten von der Discovery - Quelle liefert gerade nichts"
+            )
 
         passed = [r.candidate for r in screen_all(candidates, self.settings.screen) if r.passed]
         stats.passed_screen = len(passed)

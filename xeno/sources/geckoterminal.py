@@ -46,7 +46,7 @@ def _mint_from_id(token_id: str | None) -> str:
 
 class GeckoTerminal:
     def __init__(self, http: HttpClient | None = None, network: str = "solana") -> None:
-        self.http = http or HttpClient(rate_limit=0.5)  # API erlaubt ~30/min
+        self.http = http or HttpClient(rate_limit=0.35)  # Limit liegt bei ~30/min
         self.network = network
 
     def _pools(self, endpoint: str, pages: int, source: str) -> list[TokenCandidate]:

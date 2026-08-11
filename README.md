@@ -151,6 +151,19 @@ python3 -m xeno scan --profile established
 
 Dauerhaft festlegen über `XENO_PROFILE=early` in der `.env`.
 
+### Suchbreite: einmalig ≠ dauerhaft
+
+Ein einmaliger `scan` holt bei `early` **10 Seiten** (200 Pools). Der
+Dauerbetrieb (`watch`, `serve`) nimmt bewusst nur **3** — aus zwei Gründen:
+
+1. Die kostenlose GeckoTerminal-API sperrt sonst. Nachgemessen: 10 Seiten im
+   Minutentakt führen ab dem **dritten** Durchlauf zu `HTTP 429`.
+2. Tiefe Seiten bringen im Dauerbetrieb nichts. Dort stehen Pools, die eine
+   Minute vorher schon auf Seite 1 standen und längst geprüft sind.
+
+Wird die Quelle trotzdem einmal gedrosselt, steht das jetzt **im Log** — ein
+gesperrter Zugang sah vorher genauso aus wie ein ruhiger Markt.
+
 ### Warum das nötig war
 
 Die Werte sind nicht geschätzt, sondern aus **200 tatsächlich frisch erstellten
@@ -480,7 +493,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 212 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 218 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

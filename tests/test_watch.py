@@ -388,3 +388,87 @@ class TestNotifiers:
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "abc")
         monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
         assert TelegramNotifier.from_env() is None
+
+
+class TestSilentFailures:
+    """Der Fall aus dem echten Betrieb: das Log zeigte neun Durchlaeufe mit
+    '0 gefunden, 0 geprueft, 0 gemeldet' - ohne jeden Hinweis darauf, dass die
+    Datenquelle wegen Ueberschreitung des Anfragelimits gar nichts lieferte.
+    Ein gedrosselter Zugang sah damit genauso aus wie ein ruhiger Markt."""
+
+    def test_discovery_reports_failures(self):
+        from xeno.discovery import Discovery
+
+        class Broken:
+            def new_pools(self, pages=1):
+                raise RuntimeError("HTTP 429 bei api.geckoterminal.com")
+
+            def trending_pools(self, pages=1):
+                return []
+
+        errors: list[str] = []
+        result = Discovery(gecko=Broken()).collect(on_error=errors.append)
+        assert result == []
+        assert errors, "Ein Ausfall der Quelle muss gemeldet werden"
+
+    def test_rate_limit_gets_an_actionable_message(self):
+        from xeno.discovery import Discovery
+
+        class Limited:
+            def new_pools(self, pages=1):
+                raise RuntimeError("HTTP 429 bei api.geckoterminal.com")
+
+            def trending_pools(self, pages=1):
+                return []
+
+        errors: list[str] = []
+        Discovery(gecko=Limited()).collect(on_error=errors.append)
+        assert "Anfragelimit" in errors[0]
+        assert "--pages" in errors[0] or "Intervall" in errors[0]
+
+    def test_one_broken_source_does_not_stop_the_other(self):
+        from conftest import make_candidate
+
+        from xeno.discovery import Discovery
+
+        class HalfBroken:
+            def new_pools(self, pages=1):
+                raise RuntimeError("kaputt")
+
+            def trending_pools(self, pages=1):
+                return [make_candidate()]
+
+        errors: list[str] = []
+        result = Discovery(gecko=HalfBroken()).collect(
+            include_trending=True, on_error=errors.append
+        )
+        assert len(result) == 1
+        assert errors
+
+    def test_empty_result_is_flagged(self, tmp_path):
+        """Auch ohne Ausnahme darf ein leerer Durchlauf nicht kommentarlos
+        bleiben - sonst sieht ein defekter Zugang aus wie Marktruhe."""
+        watcher, _, _ = make_watcher(tmp_path, [])
+        stats = watcher.cycle(budget=5, test_trade=False)
+        assert stats.discovered == 0
+        assert stats.errors
+
+    def test_watcher_uses_the_smaller_page_count(self, tmp_path):
+        """Im Dauerbetrieb weniger Seiten - sonst sperrt die Quelle."""
+        from xeno.config import Settings
+        from xeno.profiles import EARLY
+
+        seen: dict[str, int] = {}
+
+        class Counting:
+            def collect(self, pages=1, **kwargs):
+                seen["pages"] = pages
+                return []
+
+        watcher, _, _ = make_watcher(tmp_path, [])
+        watcher.settings = Settings.from_env("early")
+        watcher.discovery = Counting()
+        watcher.cycle(budget=1, test_trade=False)
+
+        assert seen["pages"] == EARLY.watch_pages
+        assert seen["pages"] < EARLY.pages

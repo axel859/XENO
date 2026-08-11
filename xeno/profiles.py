@@ -38,10 +38,18 @@ class Profile:
     name: str
     summary: str
     screen: ScreenThresholds
-    #: Seiten je Discovery-Lauf. Eine Seite sind 20 Pools.
+    #: Seiten je Discovery-Lauf bei einem einmaligen Scan. Eine Seite sind
+    #: 20 Pools.
     pages: int
     include_new: bool
     include_trending: bool
+    #: Seiten im Dauerbetrieb. Deutlich weniger als bei einem einmaligen
+    #: Scan, und zwar aus zwei Gruenden: die kostenlose GeckoTerminal-API
+    #: sperrt bei zu vielen Anfragen (nachgemessen: 10 Seiten im Minutentakt
+    #: fuehren ab dem dritten Durchlauf zu HTTP 429), und tiefe Seiten sind
+    #: im Dauerbetrieb ohnehin unnoetig - dort stehen Pools, die beim
+    #: vorherigen Durchlauf schon auf Seite 1 waren.
+    watch_pages: int = 3
     #: Nach welchem Merkmal das knappe Pruefbudget verteilt wird.
     #: "traction" = Kaeufer und Kaufdruck, "liquidity" = Groesse.
     rank_by: str = "liquidity"
@@ -51,6 +59,7 @@ EARLY = Profile(
     name="early",
     summary="Frische Pools mit erster echter Beteiligung - vor dem Anstieg",
     pages=10,
+    watch_pages=3,
     # Trending ist per Definition zu spaet: was dort auftaucht, laeuft bereits.
     include_new=True,
     include_trending=False,
@@ -79,6 +88,7 @@ BALANCED = Profile(
     name="balanced",
     summary="Bereits handelbare Token mit Substanz",
     pages=3,
+    watch_pages=2,
     include_new=True,
     include_trending=True,
     rank_by="liquidity",
@@ -89,6 +99,7 @@ ESTABLISHED = Profile(
     name="established",
     summary="Groessere, laufende Token - spaet, aber belastbar bewertbar",
     pages=2,
+    watch_pages=2,
     include_new=False,
     include_trending=True,
     rank_by="liquidity",
