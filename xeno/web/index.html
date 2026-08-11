@@ -328,11 +328,12 @@ function renderStatus(s) {
   document.getElementById('dot').className = 'dot' + (s.running && !s.stopping ? ' on' : '');
   const btn = document.getElementById('toggle');
   if (!btn.disabled) btn.textContent = s.running ? 'Stopp' : 'Start';
+  const profil = s.profile ? ` · Profil ${s.profile.name}` : '';
   document.getElementById('sub').textContent = s.stopping
     ? 'hält an — laufende Prüfung wird noch beendet'
     : s.running
-      ? `läuft · alle ${Math.round(s.interval)}s · ${s.cycles} Durchläufe`
-      : 'gestoppt';
+      ? `läuft · alle ${Math.round(s.interval)}s · ${s.cycles} Durchläufe${profil}`
+      : `gestoppt${profil}`;
   document.getElementById('s-checked').textContent = s.checked_total;
   document.getElementById('s-wl').textContent = s.watchlist;
   document.getElementById('s-alerts').textContent = s.alerts;

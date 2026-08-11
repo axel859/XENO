@@ -56,16 +56,17 @@ python3 -m xeno config                   # aktive Einstellungen zeigen
 ## Beispiel
 
 ```
-$ python3 -m xeno scan --trending-only --max-age-hours 200 --limit 6
+$ python3 -m xeno scan --limit 3        # Standardprofil: früh dran
 
 URTEIL   PKT  TOKEN                   LIQ  TOP10  WICHTIGSTER BEFUND
 ------------------------------------------------------------------------------
-OK        95  XST            liq   $53.4k  top10    8%  keine Auffaelligkeiten
-CAUTION   65  Remus          liq   $94.1k  top10   12%  5 verbundene Wallet-Netzwerke (26 Wallets)
-RISKY     35  TOAD           liq  $471.6k  top10   28%  4 verbundene Wallet-Netzwerke (91 Wallets)
-AVOID      0  Dealer         liq  $109.0k  top10   49%  Groesste private Wallet haelt 31.0%
-AVOID      0  BULLWHALE      liq   $30.8k  top10   63%  Groesste private Wallet haelt 51.3%
+OK        80  ACME           liq    $4.3k  top10   18%  Duenne Liquiditaet ($4,338)
+AVOID      0  BOT            liq   $17.5k  top10   81%  Nur 0.0% der LP-Token sind gesichert
+AVOID      0  TEAMMATES      liq    $2.1k  top10   94%  Groesste private Wallet haelt 85.0%
 ```
+
+Alle drei waren zwischen **2 und 7 Minuten alt** — die beiden Fallen sind
+erkannt, bevor irgendein Anstieg begonnen hat.
 
 ```
 $ python3 -m xeno check A13oRB9FFaiUjfi6LdCg6p9ka1u8SfGkUFs4SKvPpump
@@ -128,6 +129,81 @@ Wichtig ist die Gegenrichtung: **fehlende Daten sind kein Freispruch.** Wenn
 die Holder-Verteilung nicht abrufbar war, hat der Token diese Prüfung nicht
 bestanden — er wurde nicht geprüft. Solche Lücken verhindern ein `OK` und
 erscheinen im Report unter „Wissenslücken".
+
+---
+
+## Suchprofile — früh dran oder auf Nummer sicher
+
+Ein einziger Satz Schwellwerte kann nicht beides. Wer bei einem vier Minuten
+alten Pool 5.000 $ Liquidität und 25 Käufer verlangt, bekommt ausschließlich
+Token, deren Bewegung bereits gelaufen ist.
+
+```bash
+python3 -m xeno serve --profile early         # Standard
+python3 -m xeno scan --profile established
+```
+
+| Profil | Findet | Alter | Quelle |
+|---|---|---|---|
+| **`early`** (Standard) | Frische Pools mit erster echter Beteiligung | 2 min – 6 h | nur neue Pools |
+| `balanced` | Bereits handelbare Token mit Substanz | 3 min – 3 Tage | neu + Trending |
+| `established` | Große, laufende Token | ab 1 h | nur Trending |
+
+Dauerhaft festlegen über `XENO_PROFILE=early` in der `.env`.
+
+### Warum das nötig war
+
+Die Werte sind nicht geschätzt, sondern aus **200 tatsächlich frisch erstellten
+Pools** abgeleitet. Deren Wirklichkeit:
+
+| Merkmal | Median | ursprüngliche Schwelle | Folge |
+|---|---|---|---|
+| Alter | **3 Minuten** | mind. 3 min | 89 % raus |
+| Liquidität | 1.746 $ | mind. 5.000 $ | 85 % raus |
+| Käufer/1 h | **4** | mind. 25 | 79 % raus |
+| Volumen/1 h | 793 $ | mind. 2.000 $ | 73 % raus |
+
+Von 100 frischen Pools kam **einer** durch — nicht weil die Token schlecht
+waren, sondern weil die Messlatte für ihr Alter unerreichbar war. Übrig blieben
+nur alte Trending-Token, deren Anstieg vorbei war.
+
+### Der entscheidende Maßstabswechsel
+
+Bei einem vier Minuten alten Token sagt die **Größe** nichts — 14.000 $
+Liquidität kann eine einzelne Wallet stellen. Aussagekräftig ist die
+**Beteiligung**: wie viele *verschiedene* Leute kaufen, und ob sie halten.
+
+Deshalb sortiert `early` die Kandidaten nicht nach Liquidität, sondern nach
+Käuferzahl mal Kaufdruck. Extreme Verhältnisse werden gedeckelt — 40:1 heißt
+meist nur, dass noch niemand verkauft hat, und ist kein vierzigfach besseres
+Signal als 5:1.
+
+So sieht das Ergebnis aus:
+
+```
+$ python3 -m xeno scan --profile early --limit 3
+
+OK     80  ACME        top10 18%   nur dünne Liquidität
+AVOID   0  BOT         top10 81%   LP zu 0% gesichert
+AVOID   0  TEAMMATES   top10 94%   85% der Supply in einer Wallet
+```
+
+Alle drei zwischen 2 und 7 Minuten alt — und die beiden Fallen sind erkannt,
+bevor irgendein Anstieg begonnen hat.
+
+### Was früh trotzdem nicht geht
+
+Die Prüfungen, die zählen, funktionieren auch nach drei Minuten: Mint- und
+Freeze-Authority, Token-2022-Extensions, LP-Sicherung und die
+Creator-Historie stehen sofort in der Chain.
+
+Dünner wird es bei **Holder-Verteilung und Bundling** — RugCheck braucht ein
+paar Minuten, bis es einen neuen Token vollständig erfasst hat. Fehlende Daten
+führen dann zu `CAUTION` statt `OK`, nie zu einem falschen Freibrief.
+
+Und: `early` lässt deutlich mehr Kandidaten durch. Ohne eigenen RPC-Key wird
+das Prüfbudget schnell knapp — **hier lohnt sich der kostenlose Helius-Key
+wirklich.**
 
 ---
 
@@ -404,7 +480,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 172 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 204 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

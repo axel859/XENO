@@ -10,6 +10,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # nur fuer die Typpruefung - zur Laufzeit waere es zirkulaer
+    from .profiles import Profile
 
 PUBLIC_RPC = "https://api.mainnet-beta.solana.com"
 
@@ -89,14 +93,24 @@ class Settings:
     cache_dir: Path | None = None
     screen: ScreenThresholds = field(default_factory=ScreenThresholds)
     risk: RiskThresholds = field(default_factory=RiskThresholds)
+    #: Aktives Suchprofil. Bestimmt Schwellwerte, Suchbreite und Reihenfolge.
+    profile: "Profile | Any" = None
 
     @property
     def uses_public_rpc(self) -> bool:
         return self.rpc_url.rstrip("/") == PUBLIC_RPC
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls, profile_name: str | None = None) -> "Settings":
         load_dotenv()
+
+        # Erst hier importieren: profiles baut auf config auf.
+        from .profiles import get_profile
+
+        profile = get_profile(profile_name)
+        # Das Profil liefert die Ausgangswerte, einzelne Umgebungsvariablen
+        # duerfen sie weiterhin uebersteuern.
+        base = profile.screen
 
         rpc_url = os.environ.get("XENO_RPC_URL", "").strip()
         helius_key = os.environ.get("HELIUS_API_KEY", "").strip()
@@ -115,15 +129,22 @@ class Settings:
             request_timeout=_env_float("XENO_TIMEOUT", 25.0),
             max_retries=_env_int("XENO_MAX_RETRIES", 4),
             cache_dir=Path(cache_raw) if cache_raw else None,
+            profile=profile,
             screen=ScreenThresholds(
-                min_liquidity_usd=_env_float("XENO_MIN_LIQUIDITY", 5_000.0),
-                max_liquidity_usd=_env_float("XENO_MAX_LIQUIDITY", 5_000_000.0),
-                min_volume_h1_usd=_env_float("XENO_MIN_VOLUME_H1", 2_000.0),
-                min_age_minutes=_env_float("XENO_MIN_AGE_MINUTES", 3.0),
-                max_age_hours=_env_float("XENO_MAX_AGE_HOURS", 72.0),
-                min_unique_buyers_h1=_env_int("XENO_MIN_BUYERS_H1", 25),
-                min_buy_sell_ratio=_env_float("XENO_MIN_BUY_SELL_RATIO", 0.8),
-                max_volume_to_liquidity=_env_float("XENO_MAX_VOL_LIQ", 60.0),
+                min_liquidity_usd=_env_float("XENO_MIN_LIQUIDITY", base.min_liquidity_usd),
+                max_liquidity_usd=_env_float("XENO_MAX_LIQUIDITY", base.max_liquidity_usd),
+                min_volume_h1_usd=_env_float("XENO_MIN_VOLUME_H1", base.min_volume_h1_usd),
+                min_age_minutes=_env_float("XENO_MIN_AGE_MINUTES", base.min_age_minutes),
+                max_age_hours=_env_float("XENO_MAX_AGE_HOURS", base.max_age_hours),
+                min_unique_buyers_h1=_env_int(
+                    "XENO_MIN_BUYERS_H1", base.min_unique_buyers_h1
+                ),
+                min_buy_sell_ratio=_env_float(
+                    "XENO_MIN_BUY_SELL_RATIO", base.min_buy_sell_ratio
+                ),
+                max_volume_to_liquidity=_env_float(
+                    "XENO_MAX_VOL_LIQ", base.max_volume_to_liquidity
+                ),
             ),
             risk=RiskThresholds(
                 max_top10_pct=_env_float("XENO_MAX_TOP10_PCT", 30.0),

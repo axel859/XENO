@@ -53,6 +53,20 @@ def _apply_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
     return replace(settings, screen=screen)
 
 
+def _source_choice(args: argparse.Namespace) -> tuple[bool | None, bool | None]:
+    """Welche Quellen genutzt werden. ``None`` heisst: das Profil entscheidet.
+
+    Ohne diese Unterscheidung wuerden die Schalter das Profil immer
+    uebersteuern - ``not args.trending_only`` ist ja auch dann wahr, wenn der
+    Schalter gar nicht gesetzt wurde.
+    """
+    if getattr(args, "new_only", False):
+        return True, False
+    if getattr(args, "trending_only", False):
+        return False, True
+    return None, None
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     settings = Settings.from_env()
     analyzer = TokenAnalyzer(settings)
@@ -76,14 +90,21 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_screen(args: argparse.Namespace) -> int:
-    settings = _apply_overrides(Settings.from_env(), args)
+    settings = _apply_overrides(Settings.from_env(getattr(args, 'profile', None)), args)
+    profile = settings.profile
+    include_new, include_trending = _source_choice(args)
     candidates = Discovery().collect(
-        include_new=not args.trending_only,
-        include_trending=not args.new_only,
-        pages=args.pages,
+        include_new=profile.include_new if include_new is None else include_new,
+        include_trending=(
+            profile.include_trending if include_trending is None else include_trending
+        ),
+        pages=args.pages or profile.pages,
     )
     results = screen_all(candidates, settings.screen)
-    results.sort(key=lambda r: (not r.passed, -(r.candidate.liquidity_usd or 0.0)))
+
+    from .pipeline import rank_key
+
+    results.sort(key=lambda r: (not r.passed, -rank_key(r.candidate, profile)))
 
     for result in results:
         if result.passed or args.verbose:
@@ -95,16 +116,17 @@ def cmd_screen(args: argparse.Namespace) -> int:
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
-    settings = _apply_overrides(Settings.from_env(), args)
+    settings = _apply_overrides(Settings.from_env(getattr(args, 'profile', None)), args)
     scanner = Scanner(settings)
 
     def progress(message: str) -> None:
         if not args.json:
             print(f"  {message}", file=sys.stderr)
 
+    include_new, include_trending = _source_choice(args)
     result = scanner.run(
-        include_new=not args.trending_only,
-        include_trending=not args.new_only,
+        include_new=include_new,
+        include_trending=include_trending,
         pages=args.pages,
         limit=args.limit,
         test_trade=not args.no_trade_test,
@@ -219,7 +241,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
             )
         return 0
 
-    settings = _apply_overrides(Settings.from_env(), args)
+    settings = _apply_overrides(Settings.from_env(getattr(args, 'profile', None)), args)
     watcher = Watcher(settings, state=state, notifier=_build_notifier(args))
     watcher.run(
         interval=args.interval,
@@ -247,7 +269,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from .server import build_server
     from .watchstate import WatchState
 
-    settings = _apply_overrides(Settings.from_env(), args)
+    settings = _apply_overrides(Settings.from_env(getattr(args, 'profile', None)), args)
     state = WatchState(args.state_file)
 
     token_override = args.token or os.environ.get("XENO_WEB_TOKEN", "").strip() or None
@@ -374,7 +396,22 @@ def cmd_config(args: argparse.Namespace) -> int:
     rpc = settings.rpc_url
     if "api-key=" in rpc:  # Key nie ausgeben
         rpc = rpc.split("api-key=")[0] + "api-key=***"
+    profile = settings.profile
     print(f"XENO {__version__}")
+    if profile is not None:
+        print(f"  Profil           : {profile.name} - {profile.summary}")
+        quellen = []
+        if profile.include_new:
+            quellen.append("neue Pools")
+        if profile.include_trending:
+            quellen.append("Trending")
+        print(f"  Quellen          : {', '.join(quellen) or 'keine'}")
+        print(f"  Suchbreite       : {profile.pages} Seiten (~{profile.pages * 20} Pools)")
+        print(
+            "  Reihenfolge      : "
+            + ("Beteiligung (Kaeufer, Kaufdruck)" if profile.rank_by == "traction"
+               else "Liquiditaet")
+        )
     print(f"  RPC              : {rpc}")
     print(f"  RPC ist oeffentl.: {settings.uses_public_rpc}")
     print(f"  RPC-Rate         : {settings.rpc_rate_limit}/s")
@@ -415,7 +452,16 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--no-telegram", action="store_true", help="Telegram nicht nutzen")
 
     def add_discovery(target: argparse.ArgumentParser) -> None:
-        target.add_argument("--pages", type=int, default=1, help="Seiten pro Quelle (Standard 1)")
+        from .profiles import DEFAULT_PROFILE, PROFILES
+
+        target.add_argument(
+            "--profile",
+            choices=list(PROFILES),
+            help="Suchstrategie. "
+            + "  ".join(f"{n}: {p.summary}" for n, p in PROFILES.items())
+            + f"  (Standard: {DEFAULT_PROFILE})",
+        )
+        target.add_argument("--pages", type=int, help="Seiten pro Quelle (je 20 Pools)")
         target.add_argument("--new-only", action="store_true", help="nur frisch erstellte Pools")
         target.add_argument("--trending-only", action="store_true", help="nur laufende Token")
         target.add_argument("--min-liquidity", type=float, help="Mindestliquiditaet in USD")

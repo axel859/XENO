@@ -53,9 +53,23 @@ class Discovery:
         include_trending: bool = True,
         pages: int = 1,
     ) -> list[TokenCandidate]:
+        """Sammelt Kandidaten. Eine Seite entspricht 20 Pools.
+
+        Bei Fehlern einer Quelle wird die andere trotzdem ausgewertet - ein
+        Aussetzer soll nicht den ganzen Durchlauf leer ausgehen lassen.
+        """
         groups: list[list[TokenCandidate]] = []
         if include_new:
-            groups.append(self.gecko.new_pools(pages=pages))
+            groups.append(self._safely(self.gecko.new_pools, pages))
         if include_trending:
-            groups.append(self.gecko.trending_pools(pages=pages))
+            # Trending liefert deutlich weniger Nachschub als neue Pools und
+            # wiederholt sich stark - mehr als drei Seiten bringen nichts.
+            groups.append(self._safely(self.gecko.trending_pools, min(pages, 3)))
         return merge_candidates(groups)
+
+    @staticmethod
+    def _safely(fetch, pages: int) -> list[TokenCandidate]:
+        try:
+            return fetch(pages=pages)
+        except Exception:  # noqa: BLE001
+            return []

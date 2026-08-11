@@ -130,6 +130,31 @@ class TokenCandidate:
         return self.volume_h1_usd / self.liquidity_usd
 
     @property
+    def traction(self) -> float:
+        """Mass fuer frueh einsetzende Beteiligung.
+
+        Bei einem wenige Minuten alten Token sagt die Liquiditaet fast nichts -
+        die kann eine einzelne Wallet stellen. Aussagekraeftig ist, wie viele
+        *verschiedene* Leute kaufen und ob sie halten oder sofort wieder
+        rausgehen.
+
+        Der Kaufueberhang wird gedeckelt: ein Verhaeltnis von 40:1 entsteht
+        meist dadurch, dass schlicht noch niemand verkauft hat, und ist kein
+        vierzigfach besseres Signal als 5:1.
+        """
+        buyers = self.buyers_h1 or 0
+        if buyers <= 0:
+            return 0.0
+        ratio = self.buy_sell_ratio
+        if ratio is None:
+            factor = 1.0
+        elif ratio == float("inf"):
+            factor = 3.0
+        else:
+            factor = min(ratio, 5.0)
+        return buyers * factor
+
+    @property
     def label(self) -> str:
         return self.symbol or self.name or self.mint[:8]
 

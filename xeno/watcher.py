@@ -29,6 +29,7 @@ from .config import Settings
 from .discovery import Discovery
 from .models import Finding, RiskReport, Severity, TokenCandidate, Verdict
 from .notify import Alert, AlertKind, ConsoleNotifier, Notifier
+from .pipeline import rank_key
 from .screen import screen_all
 from .watchstate import TokenState, WatchState, is_better, is_worse
 
@@ -160,9 +161,14 @@ class Watcher:
             if self.state.is_due(state.mint, now):
                 add(state.mint, by_mint.get(state.mint))
 
-        for candidate in candidates:
-            if not self.state.known(candidate.mint):
-                add(candidate.mint, candidate)
+        # Neue Kandidaten in der Reihenfolge des Profils - bei frischen Token
+        # nach Beteiligung, sonst nach Groesse. Das entscheidet, welche das
+        # knappe Budget bekommen, wenn mehr durchkommen als geprueft werden
+        # koennen.
+        fresh = [c for c in candidates if not self.state.known(c.mint)]
+        fresh.sort(key=lambda c: rank_key(c, self.settings.profile), reverse=True)
+        for candidate in fresh:
+            add(candidate.mint, candidate)
 
         rechecks = [
             s
@@ -196,8 +202,13 @@ class Watcher:
         stats = CycleStats()
         now = time.time()
 
+        profile = self.settings.profile
         try:
-            candidates = self.discovery.collect()
+            candidates = self.discovery.collect(
+                include_new=profile.include_new if profile else True,
+                include_trending=profile.include_trending if profile else True,
+                pages=profile.pages if profile else 1,
+            )
             stats.discovered = len(candidates)
         except Exception as exc:  # noqa: BLE001
             stats.errors.append(f"Discovery fehlgeschlagen: {exc}")

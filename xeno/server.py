@@ -376,6 +376,15 @@ class Handler(BaseHTTPRequestHandler):
             "uptime": time.time() - self.app.started_at,
             "uses_public_rpc": self.app.settings.uses_public_rpc,
             "watchlist": len(self.app.state.watchlist),
+            "profile": (
+                {
+                    "name": self.app.settings.profile.name,
+                    "summary": self.app.settings.profile.summary,
+                    "max_age_hours": self.app.settings.screen.max_age_hours,
+                }
+                if self.app.settings.profile
+                else None
+            ),
         }
 
     def _tokens(self) -> list[dict[str, Any]]:

@@ -18,6 +18,18 @@ from .models import RiskReport, ScreenResult, TokenCandidate
 from .screen import screen_all
 
 
+def rank_key(candidate: TokenCandidate, profile=None) -> float:
+    """Bestimmt, welche Kandidaten das knappe Pruefbudget bekommen.
+
+    Bei frischen Token ist die Liquiditaet als Rangfolge irrefuehrend - sie
+    sagt nur, wie viel jemand hineingelegt hat, nicht ob sich jemand dafuer
+    interessiert. Dort zaehlt die Beteiligung.
+    """
+    if profile is not None and getattr(profile, "rank_by", None) == "traction":
+        return candidate.traction
+    return candidate.liquidity_usd or 0.0
+
+
 @dataclass
 class ScanResult:
     """Ergebnis eines kompletten Durchlaufs."""
@@ -44,13 +56,26 @@ class Scanner:
 
     def run(
         self,
-        include_new: bool = True,
-        include_trending: bool = True,
-        pages: int = 1,
+        include_new: bool | None = None,
+        include_trending: bool | None = None,
+        pages: int | None = None,
         limit: int = 10,
         test_trade: bool = True,
         on_progress: Callable[[str], None] | None = None,
     ) -> ScanResult:
+        """Fuehrt einen kompletten Durchlauf aus.
+
+        Ohne Angabe bestimmt das aktive Profil Suchbreite, Quellen und die
+        Reihenfolge der Tiefpruefungen.
+        """
+        profile = self.settings.profile
+        if include_new is None:
+            include_new = profile.include_new if profile else True
+        if include_trending is None:
+            include_trending = profile.include_trending if profile else True
+        if pages is None:
+            pages = profile.pages if profile else 1
+
         def report_progress(message: str) -> None:
             if on_progress:
                 on_progress(message)
@@ -67,8 +92,7 @@ class Scanner:
         passed = result.passed_screen
         report_progress(f"{len(passed)} durch den Vorfilter")
 
-        # Die liquidesten zuerst - dort ist ein Einstieg ueberhaupt umsetzbar.
-        passed.sort(key=lambda r: r.candidate.liquidity_usd or 0.0, reverse=True)
+        passed.sort(key=lambda r: rank_key(r.candidate, profile), reverse=True)
 
         for index, screen_result in enumerate(passed[:limit], start=1):
             candidate = screen_result.candidate
