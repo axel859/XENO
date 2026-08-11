@@ -1,0 +1,275 @@
+"""Die Ueberwachungsschleife.
+
+Sucht laufend neue Kandidaten und behaelt gleichzeitig eine selbst gepflegte
+Watchlist im Blick. Gemeldet wird nur, was neu oder anders ist.
+
+Die zwei Gestaltungsfragen, an denen ein Watcher scheitert oder taugt:
+
+**Budget.** Ein Deep-Check kostet rund fuenf Requests. Wuerde jeder Durchlauf
+alles pruefen, was der Vorfilter durchlaesst, waere das Kontingent in Minuten
+weg. Deshalb ist die Zahl der Tiefpruefungen pro Durchlauf fest gedeckelt und
+die Reihenfolge priorisiert: Watchlist zuerst, dann neue Token, dann faellige
+Wiederholungen.
+
+**Meldungsdisziplin.** Wer bei jedem Durchlauf denselben Token meldet, wird
+nach zehn Minuten ignoriert. Gemeldet wird deshalb nur bei echtem
+Zustandswechsel - und am dringendsten dann, wenn bei einem bereits bekannten
+Token ein neuer kritischer Befund auftaucht. Das ist der Fall, in dem der Rug
+gerade laeuft.
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+from dataclasses import dataclass, field
+
+from .analyzer import TokenAnalyzer
+from .config import Settings
+from .discovery import Discovery
+from .models import Finding, RiskReport, Severity, TokenCandidate, Verdict
+from .notify import Alert, AlertKind, ConsoleNotifier, Notifier
+from .screen import screen_all
+from .watchstate import TokenState, WatchState, is_better, is_worse
+
+#: Urteile, die eine Erstmeldung wert sind. Alles darunter waere Rauschen -
+#: die grosse Mehrheit neuer Token faellt durch.
+ALERT_ON_NEW = frozenset({Verdict.OK, Verdict.CAUTION})
+
+
+@dataclass
+class CycleStats:
+    discovered: int = 0
+    passed_screen: int = 0
+    checked: int = 0
+    alerts: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+def decide_alert(
+    report: RiskReport,
+    previous: TokenState | None,
+    watchlisted: bool = False,
+) -> Alert | None:
+    """Entscheidet, ob dieses Ergebnis eine Meldung rechtfertigt."""
+    verdict = report.verdict
+
+    # Erstkontakt: nur melden, wenn der Token die Pruefungen auch besteht.
+    if previous is None or previous.check_count == 0:
+        if watchlisted or verdict in ALERT_ON_NEW:
+            return Alert(
+                kind=AlertKind.NEW,
+                report=report,
+                new_findings=_notable(report.findings),
+                watchlisted=watchlisted,
+            )
+        return None
+
+    previous_verdict = previous.verdict_enum
+    known_codes = set(previous.finding_codes)
+    fresh = [f for f in report.findings if f.code not in known_codes]
+
+    # Dringendster Fall: ein kritischer Befund, den es vorher nicht gab.
+    fresh_critical = [f for f in fresh if f.severity is Severity.CRITICAL]
+    if fresh_critical:
+        return Alert(
+            kind=AlertKind.CRITICAL_CHANGE,
+            report=report,
+            previous_verdict=previous_verdict,
+            new_findings=fresh_critical,
+            watchlisted=watchlisted,
+        )
+
+    # Verschlechterung - relevant vor allem fuer gehaltene Token.
+    if is_worse(verdict, previous_verdict):
+        return Alert(
+            kind=AlertKind.DEGRADED,
+            report=report,
+            previous_verdict=previous_verdict,
+            new_findings=_notable(fresh),
+            watchlisted=watchlisted,
+        )
+
+    # Verbesserung nur melden, wenn sie zu einem brauchbaren Urteil fuehrt
+    # und darueber nicht schon einmal gemeldet wurde.
+    if (
+        is_better(verdict, previous_verdict)
+        and verdict in ALERT_ON_NEW
+        and previous.alerted_verdict != verdict.value
+    ):
+        return Alert(
+            kind=AlertKind.IMPROVED,
+            report=report,
+            previous_verdict=previous_verdict,
+            watchlisted=watchlisted,
+        )
+
+    return None
+
+
+def _notable(findings: list[Finding]) -> list[Finding]:
+    return [
+        f
+        for f in findings
+        if f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM)
+    ]
+
+
+class Watcher:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        state: WatchState | None = None,
+        notifier: Notifier | None = None,
+        discovery: Discovery | None = None,
+        analyzer: TokenAnalyzer | None = None,
+        log=None,
+    ) -> None:
+        self.settings = settings or Settings.from_env()
+        self.state = state or WatchState()
+        self.notifier = notifier or ConsoleNotifier()
+        self.discovery = discovery or Discovery()
+        self.analyzer = analyzer or TokenAnalyzer(self.settings)
+        self.log = log or (lambda message: print(f"  {message}", file=sys.stderr))
+
+    # -- Ein Durchlauf ----------------------------------------------------
+
+    def build_queue(
+        self,
+        candidates: list[TokenCandidate],
+        budget: int,
+        now: float | None = None,
+    ) -> list[tuple[str, TokenCandidate | None]]:
+        """Stellt zusammen, was in diesem Durchlauf geprueft wird.
+
+        Reihenfolge: Watchlist, dann neue Token, dann faellige Wiederholungen.
+        Die Watchlist zuerst, weil dort eine Verschlechterung unmittelbar Geld
+        kostet - ein verpasster Neuzugang dagegen nur eine Gelegenheit.
+        """
+        now = now or time.time()
+        by_mint = {c.mint: c for c in candidates}
+        queue: list[tuple[str, TokenCandidate | None]] = []
+        seen: set[str] = set()
+
+        def add(mint: str, candidate: TokenCandidate | None) -> None:
+            if mint not in seen:
+                seen.add(mint)
+                queue.append((mint, candidate))
+
+        for state in self.state.watchlist:
+            if self.state.is_due(state.mint, now):
+                add(state.mint, by_mint.get(state.mint))
+
+        for candidate in candidates:
+            if not self.state.known(candidate.mint):
+                add(candidate.mint, candidate)
+
+        rechecks = [
+            s
+            for s in self.state.due_for_recheck(now)
+            if not s.watchlisted and s.mint not in seen
+        ]
+        # Aussichtsreiche zuerst - bei knappem Budget lieber die pruefen,
+        # bei denen eine Aenderung ueberhaupt interessant waere.
+        rechecks.sort(key=lambda s: s.score, reverse=True)
+        for state in rechecks:
+            add(state.mint, by_mint.get(state.mint))
+
+        return queue[:budget]
+
+    def cycle(self, budget: int = 8, test_trade: bool = True) -> CycleStats:
+        """Ein vollstaendiger Durchlauf: suchen, filtern, pruefen, melden."""
+        stats = CycleStats()
+        now = time.time()
+
+        try:
+            candidates = self.discovery.collect()
+            stats.discovered = len(candidates)
+        except Exception as exc:  # noqa: BLE001
+            stats.errors.append(f"Discovery fehlgeschlagen: {exc}")
+            candidates = []
+
+        passed = [r.candidate for r in screen_all(candidates, self.settings.screen) if r.passed]
+        stats.passed_screen = len(passed)
+
+        for mint, candidate in self.build_queue(passed, budget, now):
+            previous = self.state.get(mint)
+            watchlisted = bool(previous and previous.watchlisted)
+            try:
+                report = self.analyzer.analyze(
+                    mint, candidate=candidate, test_trade=test_trade
+                )
+            except Exception as exc:  # noqa: BLE001
+                stats.errors.append(f"{mint[:10]}: {exc}")
+                continue
+
+            stats.checked += 1
+            alert = decide_alert(report, previous, watchlisted=watchlisted)
+            # Erst nach der Entscheidung speichern - decide_alert vergleicht
+            # gegen den vorherigen Stand.
+            self.state.record(report, now=time.time())
+
+            if alert is not None:
+                self.notifier.send(alert)
+                self.state.mark_alerted(mint, report.verdict)
+                stats.alerts += 1
+
+        try:
+            self.state.save()
+        except OSError as exc:
+            stats.errors.append(f"Zustand konnte nicht gespeichert werden: {exc}")
+
+        return stats
+
+    # -- Dauerbetrieb -----------------------------------------------------
+
+    def run(
+        self,
+        interval: float = 60.0,
+        budget: int = 8,
+        test_trade: bool = True,
+        max_cycles: int | None = None,
+    ) -> None:
+        """Laeuft bis Strg-C.
+
+        Ein Fehler in einem Durchlauf beendet die Ueberwachung nicht - sonst
+        stirbt der Watcher nachts an einem Netzwerkaussetzer und niemand
+        bemerkt es.
+        """
+        self.log(
+            f"Watcher laeuft. Intervall {interval:.0f}s, "
+            f"max. {budget} Tiefpruefungen pro Durchlauf. Strg-C beendet."
+        )
+        if self.state.watchlist:
+            self.log(f"{len(self.state.watchlist)} Token auf der Watchlist")
+
+        cycles = 0
+        try:
+            while max_cycles is None or cycles < max_cycles:
+                started = time.monotonic()
+                try:
+                    stats = self.cycle(budget=budget, test_trade=test_trade)
+                    self.log(
+                        f"Durchlauf {cycles + 1}: {stats.discovered} gefunden, "
+                        f"{stats.passed_screen} gefiltert, {stats.checked} geprueft, "
+                        f"{stats.alerts} gemeldet"
+                    )
+                    for error in stats.errors:
+                        self.log(f"! {error}")
+                except Exception as exc:  # noqa: BLE001
+                    self.log(f"! Durchlauf fehlgeschlagen: {exc}")
+
+                cycles += 1
+                if max_cycles is not None and cycles >= max_cycles:
+                    break
+
+                remaining = interval - (time.monotonic() - started)
+                if remaining > 0:
+                    time.sleep(remaining)
+        except KeyboardInterrupt:
+            self.log("Beendet.")
+        finally:
+            try:
+                self.state.save()
+            except OSError as exc:
+                self.log(f"! Zustand konnte nicht gespeichert werden: {exc}")

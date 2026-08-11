@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from . import __version__
 from .analyzer import TokenAnalyzer
@@ -132,6 +133,129 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_notifier(args: argparse.Namespace):
+    """Stellt die Meldekanaele zusammen. Konsole ist immer dabei."""
+    from .notify import ConsoleNotifier, JsonlNotifier, MultiNotifier, TelegramNotifier
+
+    channels = [ConsoleNotifier()]
+
+    if not args.no_telegram:
+        telegram = TelegramNotifier.from_env()
+        if telegram is not None:
+            channels.append(telegram)
+            print("  Telegram aktiv", file=sys.stderr)
+        else:
+            print(
+                "  Telegram inaktiv (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID nicht gesetzt)\n"
+                "  Einrichtung:  xeno telegram-setup",
+                file=sys.stderr,
+            )
+
+    if args.log_file:
+        channels.append(JsonlNotifier(args.log_file))
+
+    return MultiNotifier(channels) if len(channels) > 1 else channels[0]
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    from .watcher import Watcher
+    from .watchstate import WatchState
+
+    state = WatchState(args.state_file)
+
+    # Watchlist-Verwaltung: ausfuehren und beenden, nicht ueberwachen.
+    if args.add:
+        for mint in args.add:
+            state.add_to_watchlist(mint)
+            print(f"Zur Watchlist hinzugefuegt: {mint}")
+        state.save()
+        return 0
+
+    if args.remove:
+        for mint in args.remove:
+            if state.remove_from_watchlist(mint):
+                print(f"Von der Watchlist entfernt: {mint}")
+            else:
+                print(f"Stand nicht auf der Watchlist: {mint}")
+        state.save()
+        return 0
+
+    if args.list:
+        entries = state.watchlist
+        if not entries:
+            print("Watchlist ist leer.  Hinzufuegen:  xeno watch --add <mint>")
+            return 0
+        print(f"{'URTEIL':8} {'PKT':>3}  {'TOKEN':14} {'GEPRUEFT':>9}  MINT")
+        for entry in sorted(entries, key=lambda s: s.score, reverse=True):
+            checked = (
+                f"{(time.time() - entry.last_checked) / 60:.0f}min"
+                if entry.last_checked
+                else "nie"
+            )
+            print(
+                f"{entry.verdict:8} {entry.score:3d}  {entry.symbol or '?':14.14} "
+                f"{checked:>9}  {entry.mint}"
+            )
+        return 0
+
+    settings = _apply_overrides(Settings.from_env(), args)
+    watcher = Watcher(settings, state=state, notifier=_build_notifier(args))
+    watcher.run(
+        interval=args.interval,
+        budget=args.budget,
+        test_trade=not args.no_trade_test,
+        max_cycles=args.cycles,
+    )
+    return 0
+
+
+def cmd_telegram_setup(args: argparse.Namespace) -> int:
+    """Fuehrt durch die Telegram-Einrichtung.
+
+    Die Chat-ID ist der unangenehme Teil - sie steht nirgends sichtbar in der
+    App. Dieser Befehl liest sie aus den Updates des Bots aus.
+    """
+    import os
+
+    from .notify import TelegramNotifier, telegram_discover_chat_id
+
+    Settings.from_env()  # laedt .env
+    token = args.token or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+    if not token:
+        print(
+            "Kein Bot-Token.\n\n"
+            "  1. In Telegram @BotFather anschreiben, /newbot senden\n"
+            "  2. Den erhaltenen Token hier eintragen:\n"
+            "       echo 'TELEGRAM_BOT_TOKEN=dein-token' >> .env\n"
+            "  3. Dem eigenen Bot in Telegram irgendeine Nachricht schicken\n"
+            "  4. Diesen Befehl erneut ausfuehren\n"
+        )
+        return 1
+
+    chats = telegram_discover_chat_id(token)
+    if not chats:
+        print(
+            "Bot erreichbar, aber keine Chats gefunden.\n"
+            "Schick deinem Bot in Telegram eine beliebige Nachricht und\n"
+            "fuehre diesen Befehl dann erneut aus."
+        )
+        return 1
+
+    print("Gefundene Chats:\n")
+    for chat in chats:
+        print(f"  Chat-ID {chat['id']}   {chat['type']}   {chat['name']}")
+    print("\nIn die .env eintragen:")
+    print(f"  TELEGRAM_CHAT_ID={chats[0]['id']}")
+
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if chat_id:
+        notifier = TelegramNotifier(token, chat_id)
+        if notifier.send_text("XENO ist eingerichtet. Meldungen kommen hier an."):
+            print("\nTestnachricht verschickt.")
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     settings = Settings.from_env()
     rpc = settings.rpc_url
@@ -198,6 +322,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common(p_scan)
     p_scan.set_defaults(func=cmd_scan)
+
+    p_watch = sub.add_parser(
+        "watch",
+        help="dauerhaft ueberwachen und bei Aenderungen melden",
+        description="Sucht laufend neue Kandidaten und ueberwacht die Watchlist. "
+        "Meldet nur, was neu oder anders ist.",
+    )
+    add_discovery(p_watch)
+    p_watch.add_argument(
+        "--interval", type=float, default=60.0, help="Sekunden zwischen Durchlaeufen (60)"
+    )
+    p_watch.add_argument(
+        "--budget", type=int, default=8, help="max. Tiefpruefungen pro Durchlauf (8)"
+    )
+    p_watch.add_argument(
+        "--cycles", type=int, help="nach so vielen Durchlaeufen beenden (Standard: endlos)"
+    )
+    p_watch.add_argument("--state-file", help="Pfad der Zustandsdatei")
+    p_watch.add_argument("--log-file", help="jede Meldung als JSON-Zeile anhaengen")
+    p_watch.add_argument("--no-telegram", action="store_true", help="Telegram nicht nutzen")
+    p_watch.add_argument(
+        "--no-trade-test", action="store_true", help="Kauf-/Verkaufstest ueberspringen"
+    )
+    p_watch.add_argument(
+        "--add", nargs="+", metavar="MINT", help="Token zur Watchlist hinzufuegen und beenden"
+    )
+    p_watch.add_argument(
+        "--remove", nargs="+", metavar="MINT", help="Token von der Watchlist entfernen"
+    )
+    p_watch.add_argument("--list", action="store_true", help="Watchlist anzeigen")
+    p_watch.set_defaults(func=cmd_watch)
+
+    p_telegram = sub.add_parser("telegram-setup", help="Telegram einrichten und testen")
+    p_telegram.add_argument("--token", help="Bot-Token (sonst aus TELEGRAM_BOT_TOKEN)")
+    p_telegram.set_defaults(func=cmd_telegram_setup)
 
     p_config = sub.add_parser("config", help="aktive Konfiguration anzeigen")
     p_config.set_defaults(func=cmd_config)

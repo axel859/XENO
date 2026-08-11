@@ -27,6 +27,7 @@ Keine Abhängigkeiten nötig — alles läuft mit der Python-Standardbibliothek
 ```bash
 python3 -m xeno check <mint-adresse>     # einen Token gründlich prüfen
 python3 -m xeno scan                     # suchen, filtern, prüfen
+python3 -m xeno watch                    # dauerhaft überwachen und melden
 python3 -m xeno screen                   # nur Vorfilter, ohne Deep-Check
 python3 -m xeno config                   # aktive Einstellungen zeigen
 ```
@@ -106,6 +107,95 @@ Wichtig ist die Gegenrichtung: **fehlende Daten sind kein Freispruch.** Wenn
 die Holder-Verteilung nicht abrufbar war, hat der Token diese Prüfung nicht
 bestanden — er wurde nicht geprüft. Solche Lücken verhindern ein `OK` und
 erscheinen im Report unter „Wissenslücken".
+
+---
+
+## Watch-Modus
+
+`scan` ist eine Momentaufnahme. `watch` läuft dauerhaft, sucht neue Kandidaten
+und behält gleichzeitig eine selbst gepflegte Watchlist im Blick.
+
+```bash
+python3 -m xeno watch                              # loslegen
+python3 -m xeno watch --interval 30 --budget 12    # schneller, mehr Prüfungen
+python3 -m xeno watch --add <mint>                 # Token zur Watchlist
+python3 -m xeno watch --list                       # Watchlist anzeigen
+```
+
+### Was er meldet — und was nicht
+
+Gemeldet wird nur bei echtem Zustandswechsel. Ein Watcher, der im Minutentakt
+dieselben zehn Token durchgibt, wird nach kurzer Zeit ignoriert.
+
+| Anlass | Wann |
+|---|---|
+| **Neuer Kandidat** | Ein frischer Token erreicht `OK` oder `CAUTION` |
+| **WARNUNG – kritische Änderung** | Bei einem bekannten Token taucht ein kritischer Befund auf, den es vorher nicht gab |
+| **Verschlechtert** | Das Urteil ist gefallen (`OK` → `RISKY`) |
+| **Verbessert** | Das Urteil ist gestiegen — einmalig, nicht bei jedem Durchlauf |
+
+Unveränderte Token bleiben still.
+
+Die zweite Zeile ist der eigentliche Grund für den Watch-Modus. Ein einmaliger
+Scan sagt dir, wie ein Token *jetzt* aussieht. Der Watcher merkt, wenn die
+LP-Sperre verschwindet, eine Wallet anfängt einzusammeln oder die
+Verkaufsroute wegfällt — also genau dann, wenn der Rug gerade läuft. Für einen
+Token, den du **hältst**, ist das mehr wert als jede Neuentdeckung.
+
+### Wiederholungsprüfung
+
+Wie oft ein Token erneut geprüft wird, hängt von seinem Alter ab — ein fünf
+Minuten alter Token ändert sich ständig, ein drei Tage alter kaum:
+
+```
+< 1h alt   →  alle 5 min          Watchlist:  mindestens alle 10 min,
+< 6h alt   →  alle 15 min                     unabhängig vom Alter
+< 24h alt  →  stündlich
+älter      →  alle 4h             AVOID mit kritischem Befund:  nie wieder
+```
+
+Der letzte Punkt spart spürbar Budget: ein Token mit aktiver Mint-Authority
+wird nicht besser, den muss man nicht stündlich neu prüfen. Es sei denn, er
+steht auf deiner Watchlist — dann wird weiter geprüft.
+
+### Budget
+
+Ein Deep-Check kostet etwa fünf Requests. `--budget` deckelt, wie viele pro
+Durchlauf laufen (Standard 8). Bei 60 Sekunden Intervall sind das rund 40
+Requests/Minute — für Helius' Gratis-Tarif unproblematisch, für den
+öffentlichen RPC zu viel.
+
+Die Reihenfolge ist priorisiert: **Watchlist zuerst**, dann neue Token, dann
+fällige Wiederholungen (die mit dem besten Score zuerst). Eine Verschlechterung
+bei einem Token, den du hältst, kostet Geld — ein verpasster Neuzugang nur eine
+Gelegenheit.
+
+Der Zustand liegt in `xeno-state.json`, wird atomar geschrieben und übersteht
+Neustarts, ohne alles erneut zu melden.
+
+### Telegram einrichten
+
+Ein Watcher ist nur sinnvoll, wenn dich die Meldung erreicht, während du nicht
+ins Terminal schaust.
+
+```
+1. In Telegram @BotFather anschreiben  →  /newbot  →  Token kopieren
+2. echo 'TELEGRAM_BOT_TOKEN=dein-token' >> .env
+3. Dem eigenen Bot eine beliebige Nachricht schicken
+4. python3 -m xeno telegram-setup      →  zeigt die Chat-ID an
+5. echo 'TELEGRAM_CHAT_ID=die-id' >> .env
+```
+
+Schritt 4 nimmt dir den unangenehmen Teil ab — die Chat-ID steht nirgends
+sichtbar in der App. Danach verschickt der Befehl eine Testnachricht.
+
+Ohne Telegram läuft alles genauso, nur auf der Konsole. `--log-file meldungen.jsonl`
+schreibt zusätzlich jede Meldung als JSON-Zeile mit — praktisch, um nach ein
+paar Tagen auszuwerten, ob deine Schwellwerte überhaupt taugen.
+
+Ein Ausfall des Meldekanals beendet die Überwachung nie: der Fehler landet auf
+der Konsole, die Schleife läuft weiter. Dasselbe gilt für Netzwerkaussetzer bei
+der Discovery oder einzelnen Token.
 
 ---
 
@@ -190,7 +280,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 81 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 117 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
@@ -222,6 +312,9 @@ xeno/
   sources/         GeckoTerminal, DexScreener, RugCheck, Jupiter, Solana-RPC
   known.py         bekannte Programme, Pools, Locker, Burn-Adressen
   models.py        Datentypen, Score und Urteil
+  watcher.py       Überwachungsschleife und Meldeentscheidung
+  watchstate.py    Zustand, Watchlist, Wiederholungsintervalle
+  notify.py        Konsole, Telegram, JSON-Log
 ```
 
 ---
