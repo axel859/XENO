@@ -27,10 +27,20 @@ from .sources.helius import Helius
 from .sources.jupiter import Jupiter
 from .structure import analyse as analyse_structure
 
-#: So viele Wallets werden auf ihre Geldherkunft geprueft. Jede kostet eine
-#: Anfrage, deshalb die Grenze - und deshalb nur die groessten: bei einem
-#: Buendel sitzt die Supply oben, nicht im langen Schwanz.
-FUNDING_BUDGET = 10
+#: So viele der groessten Halter kommen ueberhaupt in Frage. Bei einem
+#: Buendel sitzt die Supply oben, nicht im langen Schwanz - der Rest der
+#: Liste sagt ueber Kontrolle nichts.
+FUNDING_EXAMINE = 12
+
+#: So viele davon duerfen je Pruefung **neu** abgefragt werden. Bekannte
+#: Wallets kosten nichts und zaehlen nicht mit.
+#:
+#: Der Wert ist bewusst kleiner als FUNDING_EXAMINE. Bei einem jungen Token
+#: wechseln die groessten Halter im Minutentakt; wuerde jede Pruefung alle
+#: unbekannten nachladen, waere das Gedaechtnis wirkungslos. So waechst die
+#: Abdeckung ueber mehrere Pruefungen hinweg, und der Verbrauch bleibt
+#: gedeckelt - drei von fuenf genuegen ohnehin, um ein Buendel zu erkennen.
+FUNDING_BUDGET = 5
 
 #: Kerzenaufloesung fuer die Strukturanalyse. Fuenf Minuten ist der
 #: Kompromiss, der bei einem zwei Stunden alten Token noch zwei Dutzend
@@ -56,6 +66,7 @@ class TokenAnalyzer:
         dexscreener: DexScreener | None = None,
         helius: Helius | None = None,
         gecko: GeckoTerminal | None = None,
+        origin_cache=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         http = HttpClient(
@@ -79,6 +90,14 @@ class TokenAnalyzer:
         self.helius = helius or Helius(
             api_key=Helius().api_key or _key_from(self.settings.rpc_url), http=http
         )
+        # Gedaechtnis fuer die Wallet-Herkunft. Ohne das wuerde bei jeder
+        # Wiederholungspruefung dieselbe unveraenderliche Tatsache erneut
+        # abgefragt - der teuerste Posten im ganzen Deep-Check.
+        if origin_cache is None:
+            from .origincache import OriginCache
+
+            origin_cache = OriginCache()
+        self.origin_cache = origin_cache
 
     def collect(
         self,
@@ -162,7 +181,12 @@ class TokenAnalyzer:
             wallets = self._top_wallets(data)
             if wallets:
                 try:
-                    data.origins = self.helius.origins(wallets, budget=FUNDING_BUDGET)
+                    data.origins = self.helius.origins(
+                        wallets[:FUNDING_EXAMINE],
+                        budget=FUNDING_BUDGET,
+                        cache=self.origin_cache,
+                    )
+                    self.origin_cache.save()
                 except Exception as exc:  # noqa: BLE001
                     data.errors.append(f"Wallet-Herkunft nicht abrufbar: {exc}")
 

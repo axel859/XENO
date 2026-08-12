@@ -479,6 +479,39 @@ kein Kompromiss, sondern folgt aus der Sache: eine volle Seite Transaktionen
 heißt „zu aktiv, um frisch zu sein" — und für alle anderen liegt damit die
 gesamte Historie vor, die älteste Transaktion inklusive.
 
+#### Warum diese Prüfung ein Gedächtnis braucht
+
+Sie hat eine Eigenschaft, die sie von allen anderen unterscheidet: **ihr
+Ergebnis ändert sich nie.** Wer eine Wallet zuerst mit SOL versorgt hat, ist
+ein Ereignis der Vergangenheit.
+
+In der ersten Fassung wurde genau das trotzdem ständig neu abgefragt. Ein
+Token wird in der ersten Stunde alle fünf Minuten geprüft — zwölf Prüfungen,
+hundert Anfragen, ein einziges Ergebnis. Beim ersten Dauerbetrieb war ein
+Monatskontingent nach wenigen Tagen zu 38 % aufgebraucht.
+
+Gemessen an einem echten Token, viermal hintereinander geprüft:
+
+```
+Prüfung 1:  6 Anfragen | Gedächtnis  5 Wallets | Trefferquote  0%
+Prüfung 2:  6 Anfragen | Gedächtnis 10 Wallets | Trefferquote 29%
+Prüfung 3:  3 Anfragen | Gedächtnis 12 Wallets | Trefferquote 52%
+Prüfung 4:  1 Anfrage  | Gedächtnis 12 Wallets | Trefferquote 66%
+```
+
+Der zweite Gewinn ist weniger offensichtlich: **Bündel benutzen ihre Wallets
+wieder.** Wer heute vier Adressen für einen Token bestückt, taucht mit
+denselben Adressen nächste Woche beim nächsten auf. Jede erkannte Wallet kommt
+also dem nächsten Token zugute.
+
+Der Watcher meldet den Verbrauch seither in jeder Zeile mit — ein Kontingent,
+das nur auf der Webseite des Anbieters steht, bemerkt man sonst erst, wenn es
+fast leer ist:
+
+```
+Durchlauf 7: 132 gefunden, 4 gefiltert, 4 geprüft, 1 gemeldet, 9 API (23 gespart)
+```
+
 ---
 
 ## Dashboard

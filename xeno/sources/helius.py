@@ -135,6 +135,10 @@ class Helius:
     def __init__(self, api_key: str = "", http: HttpClient | None = None) -> None:
         self.api_key = api_key or api_key_from()
         self.http = http or HttpClient(rate_limit=5.0, timeout=30.0)
+        #: Gestellte Anfragen. Helius rechnet danach ab, und ein Kontingent,
+        #: das man nur auf der Webseite des Anbieters sieht, bemerkt man erst,
+        #: wenn es fast leer ist.
+        self.requests = 0
 
     @property
     def available(self) -> bool:
@@ -148,6 +152,7 @@ class Helius:
         """
         if not self.available:
             return []
+        self.requests += 1
         try:
             payload = self.http.get(
                 f"{BASE_URL}/addresses/{mint}/transactions",
@@ -167,6 +172,7 @@ class Helius:
         """
         if not self.available or not wallet:
             return None
+        self.requests += 1
         try:
             payload = self.http.get(
                 f"{BASE_URL}/addresses/{wallet}/transactions",
@@ -188,11 +194,31 @@ class Helius:
         result.funder, result.funded_at = first_funder(payload, wallet)
         return result
 
-    def origins(self, wallets: list[str], budget: int = 10) -> list[Origin]:
-        """Herkunft mehrerer Wallets, mit harter Obergrenze an Anfragen."""
+    def origins(
+        self, wallets: list[str], budget: int = 10, cache=None
+    ) -> list[Origin]:
+        """Herkunft mehrerer Wallets, mit harter Obergrenze an *Anfragen*.
+
+        Das Budget begrenzt die Abfragen, nicht die Ergebnisse: was schon im
+        Gedaechtnis steht, kostet nichts und zaehlt deshalb nicht mit. Bei
+        einer erneuten Pruefung desselben Token sind alle Wallets bekannt -
+        dann faellt keine einzige Anfrage an, und die Antwort ist dieselbe,
+        weil sich die Herkunft einer Wallet nicht aendern kann.
+        """
         found: list[Origin] = []
-        for wallet in wallets[:budget]:
+        spent = 0
+        for wallet in wallets:
+            if cache is not None:
+                known = cache.get(wallet)
+                if known is not None:
+                    found.append(known)
+                    continue
+            if spent >= budget:
+                break
+            spent += 1
             result = self.origin(wallet)
             if result is not None:
                 found.append(result)
+                if cache is not None:
+                    cache.put(result)
         return found

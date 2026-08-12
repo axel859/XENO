@@ -48,6 +48,12 @@ class CycleStats:
     measured: int = 0
     #: Kandidaten, die aus dem Live-Strom kamen statt aus der Abfrage.
     live: int = 0
+    #: Helius-Anfragen in diesem Durchlauf. Das Kontingent laesst sich sonst
+    #: nur auf der Webseite des Anbieters ablesen - und faellt dort erst auf,
+    #: wenn es fast leer ist.
+    api_requests: int = 0
+    #: Wallet-Abfragen, die aus dem Gedaechtnis kamen statt aus dem Netz.
+    api_saved: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -251,6 +257,11 @@ class Watcher:
         stats = CycleStats()
         now = time.time()
 
+        helius = getattr(self.analyzer, "helius", None)
+        cache = getattr(self.analyzer, "origin_cache", None)
+        requests_before = getattr(helius, "requests", 0)
+        hits_before = getattr(cache, "hits", 0)
+
         profile = self.settings.profile
         try:
             candidates = self.discovery.collect(
@@ -324,10 +335,15 @@ class Watcher:
             follow = self.tracker.run(time.time(), on_error=stats.errors.append)
             stats.measured = follow.measured
 
+        stats.api_requests = getattr(helius, "requests", 0) - requests_before
+        stats.api_saved = getattr(cache, "hits", 0) - hits_before
+
         try:
             self.state.save()
         except OSError as exc:
             stats.errors.append(f"Zustand konnte nicht gespeichert werden: {exc}")
+        if cache is not None:
+            cache.save()
 
         return stats
 
@@ -381,6 +397,12 @@ class Watcher:
                         f"{stats.alerts} gemeldet"
                         + (f", {stats.live} live" if stats.live else "")
                         + (f", {stats.measured} nachverfolgt" if stats.measured else "")
+                        + (
+                            f", {stats.api_requests} API"
+                            + (f" ({stats.api_saved} gespart)" if stats.api_saved else "")
+                            if stats.api_requests or stats.api_saved
+                            else ""
+                        )
                     )
                     for error in stats.errors:
                         self.log(f"! {error}")
