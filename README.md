@@ -673,9 +673,37 @@ der Discovery oder einzelnen Token.
 
 ---
 
+## Wo die eigenen Daten liegen
+
+Zustand und Zugangsdaten gehören dem Benutzer, nicht dem Programm. Sie liegen
+deshalb außerhalb des Projektordners:
+
+| System | Ort |
+|---|---|
+| Windows | `%LOCALAPPDATA%\XENO` |
+| macOS | `~/Library/Application Support/XENO` |
+| Linux | `~/.local/share/xeno` (bzw. `$XDG_DATA_HOME`) |
+
+Der Grund ist praktischer Natur: Lagen sie im Projektordner, fing die
+Nachverfolgung nach jedem Update in einem neuen Ordner wieder bei null an,
+und ein versehentlich gelöschter Ordner nahm sie mit. Beides ist passiert.
+
+Beim ersten Start nach dem Umzug wird ein vorhandener Altbestand aus dem
+Arbeitsverzeichnis übernommen — **kopiert, nicht verschoben**, und niemals in
+ein bereits belegtes Ziel. XENO meldet das einmal auf der Konsole; still
+Dateien zu verschieben wäre unhöflich.
+
+`XENO_DATA_DIR` setzt den Ort abweichend fest, `XENO_STATE_FILE` gezielt nur
+die Zustandsdatei. `xeno config` zeigt unter **Ablage**, was gerade gilt.
+
+---
+
 ## Konfiguration
 
-Alles über Umgebungsvariablen oder eine `.env` im Projektverzeichnis.
+Alles über Umgebungsvariablen oder eine `.env`. Gelesen werden zwei Orte: die
+`.env` im Projektverzeichnis und die im Datenordner oben. Der Projektordner
+wird zuerst gelesen und gewinnt damit — praktisch, um für einen einzelnen Lauf
+etwas anderes einzustellen, ohne die dauerhafte Einrichtung anzufassen.
 
 ### RPC (empfohlen)
 

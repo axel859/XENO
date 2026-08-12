@@ -18,6 +18,21 @@ if TYPE_CHECKING:  # nur fuer die Typpruefung - zur Laufzeit waere es zirkulaer
 PUBLIC_RPC = "https://api.mainnet-beta.solana.com"
 
 
+def load_env_files() -> list[Path]:
+    """Liest alle gefundenen ``.env``-Dateien und meldet, welche es waren.
+
+    Zwei Orte kommen in Frage: der Projektordner und das Benutzerverzeichnis.
+    Der Projektordner wird zuerst gelesen und gewinnt damit - ``load_dotenv``
+    ueberschreibt nichts, was bereits gesetzt ist.
+    """
+    from .paths import env_files
+
+    found = env_files()
+    for path in found:
+        load_dotenv(path)
+    return found
+
+
 def load_dotenv(path: str | Path = ".env") -> None:
     """Liest KEY=VALUE-Zeilen in os.environ, ohne bestehende Werte zu ueberschreiben.
 
@@ -119,7 +134,7 @@ class Settings:
 
     @classmethod
     def from_env(cls, profile_name: str | None = None) -> "Settings":
-        load_dotenv()
+        load_env_files()
 
         # Erst hier importieren: profiles baut auf config auf.
         from .profiles import get_profile

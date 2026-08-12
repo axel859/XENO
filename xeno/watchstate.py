@@ -31,6 +31,8 @@ from typing import Any
 from .models import RiskReport, Verdict
 
 STATE_VERSION = 1
+
+#: Nur noch der Dateiname - wo die Datei liegt, entscheidet ``paths``.
 DEFAULT_STATE_FILE = "xeno-state.json"
 
 #: Reihenfolge der Urteile von schlecht nach gut. UNKNOWN steht bewusst
@@ -149,7 +151,12 @@ class WatchState:
     """
 
     def __init__(self, path: str | Path | None = None) -> None:
-        self.path = Path(path or os.environ.get("XENO_STATE_FILE") or DEFAULT_STATE_FILE)
+        from .paths import state_path
+
+        #: Uebernommener Altbestand, falls beim Start einer gefunden wurde.
+        #: Die Oberflaeche meldet das einmal - stillschweigend Dateien zu
+        #: kopieren waere unhoeflich.
+        self.path, self.adopted_from = state_path(path)
         self.tokens: dict[str, TokenState] = {}
         self._lock = threading.RLock()
         self.load()

@@ -204,13 +204,94 @@ hinzufügen**. Danach hat XENO ein eigenes Icon und startet wie eine App.
 
 ---
 
-## Später: dauerhaft laufen lassen
+## Deine Daten liegen außerhalb des Ordners
+
+Zwei Dinge gehören dir und nicht dem Programm: die Nachverfolgung (was aus
+den geprüften Token wurde) und dein Helius-Key. Beides liegt deshalb hier:
+
+```
+C:\Users\DEINNAME\AppData\Local\XENO
+```
+
+**Das heißt: du kannst den XENO-Ordner löschen, neu herunterladen oder
+verschieben, ohne etwas zu verlieren.** Beim ersten Start nach einem Update
+holt XENO einen eventuellen Altbestand aus dem Programmordner automatisch
+dorthin und sagt dir das auch.
+
+Wo genau alles liegt, zeigt dir jederzeit:
+
+```powershell
+python -m xeno config
+```
+
+Ganz unten unter **Ablage**. Wenn du dort deinen Key vermisst, leg ihn
+dauerhaft ab — dann brauchst du ihn nie wieder einzutragen:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\XENO" | Out-Null
+'HELIUS_API_KEY=dein-key' | Out-File -Encoding utf8 "$env:LOCALAPPDATA\XENO\.env"
+```
+
+---
+
+## Automatisch mit Windows starten
 
 Solange das PowerShell-Fenster offen ist, arbeitet der Bot. Schließt du es
 oder fährst den PC herunter, ist er aus.
 
-Damit er wirklich rund um die Uhr läuft, muss er auf einem Gerät liegen, das
-immer an ist — ein kleiner Server für etwa 4 € im Monat oder ein Raspberry Pi.
-Dann wird auch Telegram sinnvoll, damit dich Meldungen unterwegs erreichen.
-Solange XENO nur bei laufendem PC arbeitet, genügen die Systemmeldungen von
-Windows.
+Das ist nicht nur unbequem — es kostet Messdaten. XENO misst 15 Minuten,
+1 Stunde, 6 Stunden und 24 Stunden nach jeder Prüfung nach. War der Rechner
+zu dem Zeitpunkt aus, bleibt die Messung eine Lücke. Je durchgehender der Bot
+läuft, desto schneller kannst du beurteilen, ob seine Urteile überhaupt etwas
+taugen.
+
+Im XENO-Ordner liegt dafür ein Skript:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\autostart.ps1
+```
+
+> Das `-ExecutionPolicy Bypass` braucht es, weil Windows das Ausführen von
+> Skripten standardmäßig sperrt. Es gilt nur für diesen einen Aufruf und
+> ändert nichts dauerhaft an deinem System.
+
+Das Skript fragt nach deinem Zugangswort fürs Handy und richtet dann eine
+Aufgabe in der Windows-Aufgabenplanung ein. Ab der nächsten Anmeldung startet
+der Bot von selbst — und startet auch neu, falls er abstürzt.
+
+**Sofort starten**, ohne dich neu anzumelden:
+
+```powershell
+Start-ScheduledTask -TaskName 'XENO Bot'
+```
+
+**Nachsehen, ob es läuft:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\autostart.ps1 -Zeigen
+```
+
+**Wieder loswerden:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\autostart.ps1 -Entfernen
+```
+
+Der Bot läuft dabei in einem sichtbaren Fenster. Das ist Absicht — du sollst
+sehen, dass er arbeitet, und ihn mit **Strg+C** anhalten können. Ein
+unsichtbarer Prozess, den man nur im Task-Manager wiederfindet, hilft
+niemandem.
+
+| Problem | Lösung |
+|---|---|
+| „... kann nicht geladen werden, da die Ausführung von Skripts deaktiviert ist" | Das `powershell -ExecutionPolicy Bypass -File` davor vergessen |
+| „Zugriff verweigert" | PowerShell als Administrator öffnen und noch einmal versuchen |
+| Aufgabe läuft, aber kein Fenster | Sie startet erst bei der **Anmeldung**. Zum sofortigen Test `Start-ScheduledTask` benutzen |
+| „Python nicht gefunden" | Python neu installieren, dabei **Add Python to PATH** ankreuzen |
+
+### Und wenn der PC nachts aus ist?
+
+Dann läuft auch der Bot nicht — daran ändert kein Autostart etwas. Wirklich
+rund um die Uhr geht es nur auf einem Gerät, das immer an ist: ein kleiner
+Server für etwa 4 € im Monat oder ein Raspberry Pi. Dann wird auch Telegram
+sinnvoll, damit dich Meldungen unterwegs erreichen.

@@ -37,6 +37,27 @@ _RPC_HINT = (
 )
 
 
+def _open_state(args: argparse.Namespace):
+    """Oeffnet den Zustand und meldet einmal, falls Altbestand uebernommen wurde.
+
+    Die Uebernahme geschieht beim ersten Start nach dem Umzug. Sie
+    stillschweigend zu erledigen waere falsch: der Benutzer soll wissen, dass
+    seine Daten jetzt woanders liegen - schon damit er sie wiederfindet.
+    """
+    from .watchstate import WatchState
+
+    state = WatchState(getattr(args, "state_file", None))
+    if state.adopted_from is not None:
+        print(
+            f"Bisherige Daten uebernommen:\n"
+            f"  von  {state.adopted_from}\n"
+            f"  nach {state.path}\n"
+            f"Dort ueberstehen sie ab jetzt jedes Update und jeden Neu-Download.",
+            file=sys.stderr,
+        )
+    return state
+
+
 def _apply_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
     """CLI-Argumente auf die Schwellwerte anwenden."""
     from dataclasses import replace
@@ -233,9 +254,8 @@ def _live_feed(settings: Settings, enabled: bool, log=None):
 
 def cmd_watch(args: argparse.Namespace) -> int:
     from .watcher import Watcher
-    from .watchstate import WatchState
 
-    state = WatchState(args.state_file)
+    state = _open_state(args)
 
     # Watchlist-Verwaltung: ausfuehren und beenden, nicht ueberwachen.
     if args.add:
@@ -305,10 +325,9 @@ def _local_ip() -> str:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     from .server import build_server
-    from .watchstate import WatchState
 
     settings = _apply_overrides(Settings.from_env(getattr(args, 'profile', None)), args)
-    state = WatchState(args.state_file)
+    state = _open_state(args)
 
     token_override = args.token or os.environ.get("XENO_WEB_TOKEN", "").strip() or None
     if token_override and len(token_override) < 6:
@@ -433,9 +452,8 @@ def cmd_telegram_setup(args: argparse.Namespace) -> int:
 def cmd_stats(args: argparse.Namespace) -> int:
     """Zeigt, was aus den geprueften Token tatsaechlich geworden ist."""
     from .follow import HORIZONS, summarise
-    from .watchstate import WatchState
 
-    state = WatchState(args.state_file)
+    state = _open_state(args)
     entries = [
         s
         for s in state.tokens.values()
@@ -523,6 +541,14 @@ def cmd_config(args: argparse.Namespace) -> int:
     print(f"  RPC              : {rpc}")
     print(f"  RPC ist oeffentl.: {settings.uses_public_rpc}")
     print(f"  RPC-Rate         : {settings.rpc_rate_limit}/s")
+
+    # Wo die eigenen Daten liegen. Steht bewusst hier und nicht nur in der
+    # Anleitung: wer sie sichern oder mitnehmen will, muss sie finden koennen.
+    from .paths import describe
+
+    print("\n  Ablage")
+    for label, value in describe().items():
+        print(f"    {label:16} {value}")
     print("\n  Vorfilter (Stage 1)")
     for key, value in vars(settings.screen).items():
         print(f"    {key:26} {value}")
