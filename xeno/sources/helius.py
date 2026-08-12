@@ -24,6 +24,18 @@ BASE_URL = "https://api.helius.xyz/v0"
 #: Unterhalb dieses Betrags ist es kein Handel, sondern Gebuehr oder Staub.
 MIN_TRADE_LAMPORTS = 20_000
 
+#: So viele Transaktionen einer Wallet werden angesehen. Der Wert ist kein
+#: Kompromiss, sondern eine Entscheidung: Wallets mit einer vollen Seite sind
+#: aktiv genug, um keine frisch angelegte Bundle-Wallet zu sein. Fuer alle
+#: anderen liegt damit die **gesamte** Historie vor - die aelteste
+#: Transaktion steht am Ende der Seite, ganz ohne Blaettern.
+WALLET_PAGE = 100
+
+#: Unterhalb dieses Betrags ist eine Einzahlung keine Finanzierung, sondern
+#: ein Staub-Transfer - unter anderem die beliebte Masche, fremde Wallets mit
+#: winzigen Betraegen anzuschreiben.
+MIN_FUNDING_LAMPORTS = 1_000_000  # 0.001 SOL
+
 
 @dataclass
 class Trade:
@@ -80,6 +92,45 @@ def extract_trades(transactions: list[dict[str, Any]]) -> list[Trade]:
     return trades
 
 
+@dataclass
+class Origin:
+    """Woher eine Wallet ihr erstes Geld bekommen hat."""
+
+    wallet: str
+    #: Adresse, die zuerst SOL geschickt hat. Leer, wenn nicht auffindbar.
+    funder: str = ""
+    #: Zeitpunkt dieser ersten Einzahlung.
+    funded_at: int = 0
+    #: Zahl der gesehenen Transaktionen. Eine volle Seite heisst "mindestens".
+    tx_count: int = 0
+    #: Ob die Wallet zu aktiv ist, um ihre Historie in einer Seite zu fassen.
+    established: bool = False
+
+    @property
+    def known(self) -> bool:
+        return bool(self.funder)
+
+
+def first_funder(transactions: list[dict[str, Any]], wallet: str) -> tuple[str, int]:
+    """Sucht die erste nennenswerte Einzahlung auf eine Wallet.
+
+    Durchlaufen wird von der aeltesten Transaktion vorwaerts. Die erste, bei
+    der jemand anderes SOL an diese Wallet schickt, ist ihre Geburtsstunde -
+    davor konnte sie nichts tun, weil ohne SOL auf Solana keine Gebuehr
+    bezahlbar ist.
+    """
+    ordered = sorted(transactions, key=lambda t: int(t.get("timestamp") or 0))
+    for tx in ordered:
+        for transfer in tx.get("nativeTransfers") or []:
+            if transfer.get("toUserAccount") != wallet:
+                continue
+            sender = transfer.get("fromUserAccount") or ""
+            amount = transfer.get("amount") or 0
+            if sender and sender != wallet and amount >= MIN_FUNDING_LAMPORTS:
+                return sender, int(tx.get("timestamp") or 0)
+    return "", 0
+
+
 class Helius:
     def __init__(self, api_key: str = "", http: HttpClient | None = None) -> None:
         self.api_key = api_key or api_key_from()
@@ -107,3 +158,41 @@ class Helius:
         if not isinstance(payload, list):
             return []
         return extract_trades(payload)
+
+    def origin(self, wallet: str) -> Origin | None:
+        """Herkunft einer einzelnen Wallet - eine Anfrage.
+
+        ``None`` heisst "nicht abrufbar" und ist ausdruecklich keine
+        Entwarnung; die auswertende Pruefung fuehrt das als Luecke.
+        """
+        if not self.available or not wallet:
+            return None
+        try:
+            payload = self.http.get(
+                f"{BASE_URL}/addresses/{wallet}/transactions",
+                params={"api-key": self.api_key, "limit": WALLET_PAGE},
+            )
+        except HttpError:
+            return None
+        if not isinstance(payload, list):
+            return None
+
+        result = Origin(wallet=wallet, tx_count=len(payload))
+        if len(payload) >= WALLET_PAGE:
+            # Volle Seite: die Wallet handelt viel zu viel, um frisch fuer
+            # diesen einen Token angelegt worden zu sein. Weiterzublaettern
+            # kostete Anfragen fuer eine Antwort, die wir schon haben.
+            result.established = True
+            return result
+
+        result.funder, result.funded_at = first_funder(payload, wallet)
+        return result
+
+    def origins(self, wallets: list[str], budget: int = 10) -> list[Origin]:
+        """Herkunft mehrerer Wallets, mit harter Obergrenze an Anfragen."""
+        found: list[Origin] = []
+        for wallet in wallets[:budget]:
+            result = self.origin(wallet)
+            if result is not None:
+                found.append(result)
+        return found

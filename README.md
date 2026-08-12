@@ -114,6 +114,9 @@ Wash-Trading). Typisch bleiben davon 20–50 % übrig.
 | **Handelbarkeit** | Simulierter Kauf **und Rückverkauf** über Jupiter — der eigentliche Honeypot-Test |
 | **Maschineller Handel** | Trades pro Wallet und Umsatz ohne Kursbewegung — sieht der Chart echt aus oder gemacht |
 | **Handelsmuster** | Gleichförmige Beträge in den echten Transaktionen — erkennt Wallet-Bündel, die ein Skript fahren |
+| **Herkunft der Gelder** | Wer die größten Halter zuerst mit SOL versorgt hat — ein geteilter Geldgeber ist ein Halter, nicht mehrere |
+| **Marktstruktur** | Richtung des Kursverlaufs und Abstand zum Höchststand — läuft es noch, oder ist der Lauf vorbei |
+| **Außenauftritt & Umschlag** | Hinterlegte Website/Socials und Volumen gegen Bewertung |
 
 ### Warum die Pool-Ausklammerung entscheidend ist
 
@@ -408,6 +411,74 @@ kontrolliert**. Sicherheit und Bewegungslosigkeit hängen zusammen.
 Der Schwung-Wert ist deshalb ausdrücklich **beschreibend, nicht empfehlend**:
 er sagt, dass gerade Bewegung drin ist, und nichts darüber, wie es endet.
 
+### Die Richtung — was lange fehlte
+
+Lange hat XENO ausschließlich gemessen, **ob ein Token eine Falle ist**. Nicht,
+ob er läuft. Das ist ein Unterschied, und er erklärt einen unangenehmen Effekt:
+ein sauberer Token ohne Bewegung bekam dasselbe gute Urteil wie einer, der
+gerade ausbricht.
+
+Die Strukturanalyse liest deshalb den Kursverlauf mit — nach der ältesten Regel
+der Chartlehre:
+
+```
+höhere Hochs UND höhere Tiefs   →  Aufwärtstrend
+tiefere Hochs UND tiefere Tiefs →  Abwärtstrend
+alles andere                    →  seitwärts
+```
+
+Zwei Entscheidungen dabei sind wichtig:
+
+**Gemessen wird an den Kerzenkörpern, nicht an den Dochten.** Bei dünner
+Liquidität reißt ein einzelner Kauf den Kurs für einen Moment weit nach oben;
+auf dem Chart bleibt ein langer Docht stehen. Das ist die Handlung einer
+einzelnen Wallet, nicht die Aussage des Marktes. Der Körper — Eröffnung bis
+Schluss — überlebt nur, wenn der Kurs auch dort geblieben ist.
+
+**Der Abstand zum Höchststand wird eigens gemeldet.** Das beantwortet die
+Frage, die auf zusammengefassten Marktdaten unsichtbar bleibt: ob ein Token
+seinen Lauf schon hinter sich hat. Ein echtes Beispiel aus einem Testlauf:
+
+```
+FOMEOW  [RISKY]  Score 50/100
+  Markt:   MCap $2.2k | Liq $2.4k | Alter 21.4h
+  Verlauf: Abwärts | -99% über 120 Kerzen | 99% unter Hoch
+  Holder:  Top10 11.7% | größte 3.2%
+```
+
+Autoritäten abgegeben, LP verbrannt, Verteilung unauffällig, kein Bundling —
+nach allen Sicherheitsprüfungen ein sauberer Token. Der Lauf hatte nur
+zwanzig Stunden vorher stattgefunden. Ohne die Strukturanalyse wäre das ein
+gutes Urteil geworden.
+
+**Ein Abwärtstrend ist trotzdem kein Betrugsvorwurf.** Der Befund senkt die
+Bewertung, weil ein fallender Kurs ein schlechter Einstieg ist — nicht, weil
+am Token etwas faul wäre. Und umgekehrt macht ein Aufwärtstrend einen
+gebündelten Token nicht sicher; genau so laufen gebündelte Token ja nach oben.
+
+### Herkunft der Gelder — Nachweis statt Indiz
+
+Die übrige Bundle-Erkennung arbeitet mit Ähnlichkeiten: gleich große Bestände,
+benachbarte Konten, auffällige Muster. Das sind Indizien.
+
+Hier geht es um einen Nachweis. Auf Solana kann eine Wallet ohne SOL nichts
+tun — nicht einmal die Gebühr für den ersten Kauf bezahlen. Jede Wallet hat
+deshalb einen Moment, in dem ihr **jemand das erste Geld geschickt hat**. Wenn
+fünf der größten Halter dieses Geld von derselben Adresse bekamen, sind das
+nicht fünf Käufer. Das ist einer.
+
+Zwei Einschränkungen sind eingebaut, ohne die der Nachweis wertlos wäre:
+
+* **Börsen zählen nicht.** Sie zahlen an tausende Wallets aus; wer über
+  dieselbe Börse einsteigt, teilt den Absender, ohne sich zu kennen.
+* **Wallets mit langer Historie werden gar nicht untersucht.** Wer hunderte
+  Transaktionen hat, wurde nicht für diesen Token angelegt.
+
+Der Abruf ist dabei bewusst auf **eine Anfrage je Wallet** begrenzt. Das ist
+kein Kompromiss, sondern folgt aus der Sache: eine volle Seite Transaktionen
+heißt „zu aktiv, um frisch zu sein" — und für alle anderen liegt damit die
+gesamte Historie vor, die älteste Transaktion inklusive.
+
 ---
 
 ## Dashboard
@@ -656,7 +727,17 @@ Das gehört genauso dazu wie die Feature-Liste:
   „ist das eine Falle" ausgelegt, nicht auf „bin ich der Erste".
 - **Bundling-Erkennung ist Heuristik.** Wallet-Netzwerke und gleich große
   Bestände sind starke Hinweise, kein Beweis. Wer die Beträge streut und über
-  mehrere Funding-Quellen arbeitet, fällt hier nicht auf.
+  mehrere Funding-Quellen arbeitet, fällt hier nicht auf. Die Herkunftsanalyse
+  schließt einen Teil dieser Lücke — aber wer jede Wallet aus einer eigenen
+  Quelle speist und ihr vorher etwas Handelshistorie verschafft, entgeht auch ihr.
+- **Die Strukturanalyse liest keine Zukunft.** Sie beschreibt, was der Kurs
+  bisher getan hat. Ein Aufwärtstrend kann in der nächsten Kerze brechen, und
+  bei einem wenige Minuten alten Token gibt es überhaupt keinen Verlauf, aus
+  dem sich etwas ablesen ließe — dann sagt sie ausdrücklich nichts.
+- **Hinterlegte Links sagen wenig.** Website, X-Account und Telegram stehen frei
+  eintragbar in den Startdaten. XENO prüft nur, *ob* etwas hinterlegt ist —
+  nicht, ob der Account echt, alt oder gekauft ist. Entsprechend schwach fällt
+  die Gewichtung aus.
 - **Die Holder-Analyse sieht die größten ~20 Accounts.** Das reicht für
   Konzentration, sagt aber nichts über den langen Schwanz.
 - **Fremddaten können falsch sein.** RugCheck und die Aggregatoren hängen bei

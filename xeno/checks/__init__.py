@@ -15,8 +15,11 @@ from .botting import check_botting
 from .bundling import check_bundling
 from .creator import check_creator
 from .extensions import check_extensions
+from .funding import check_funding
 from .holders import check_holders
 from .liquidity import check_liquidity
+from .presence import check_presence
+from .structure import check_structure
 from .tradability import check_tradability
 from .tradepattern import check_trade_pattern
 
@@ -26,10 +29,13 @@ ALL_CHECKS: list[Check] = [
     check_liquidity,
     check_holders,
     check_bundling,
+    check_funding,
     check_botting,
     check_trade_pattern,
     check_creator,
     check_tradability,
+    check_structure,
+    check_presence,
 ]
 
 

@@ -52,7 +52,11 @@ class Scanner:
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.discovery = discovery or Discovery()
-        self.analyzer = analyzer or TokenAnalyzer(self.settings)
+        # Geteilter GeckoTerminal-Zugang, damit Suche und Kerzenabruf sich ein
+        # Tempolimit teilen statt jeder fuer sich eines einzuhalten.
+        self.analyzer = analyzer or TokenAnalyzer(
+            self.settings, gecko=self.discovery.gecko
+        )
 
     def run(
         self,

@@ -95,6 +95,19 @@ class AppState:
                     ),
                     "watchlisted": alert.watchlisted,
                     "lines": alert.summary_lines(),
+                    # Ohne Marktdaten muesste man fuer jede Meldung erst in
+                    # die Tokenliste wechseln, um zu sehen, worum es
+                    # ueberhaupt geht.
+                    "market": (
+                        alert.report.candidate.to_dict()
+                        if alert.report.candidate
+                        else None
+                    ),
+                    "structure": (
+                        alert.report.structure.to_dict()
+                        if alert.report.structure
+                        else None
+                    ),
                 }
             )
 
@@ -407,6 +420,7 @@ class Handler(BaseHTTPRequestHandler):
                 entry["market"] = market
                 entry["momentum"] = market.get("momentum")
                 entry["holders"] = report.get("holders")
+                entry["structure"] = report.get("structure")
                 entry["top_findings"] = [
                     f
                     for f in report.get("findings", [])

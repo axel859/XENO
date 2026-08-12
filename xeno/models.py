@@ -103,11 +103,46 @@ class TokenCandidate:
     volume_h1_usd: float | None = None
     volume_h24_usd: float | None = None
     fdv_usd: float | None = None
+    #: Bewertung der *umlaufenden* Supply. Bei den meisten Memecoins identisch
+    #: mit fdv_usd, weil alles im Umlauf ist - aber eben nicht bei allen.
+    market_cap_usd: float | None = None
     buys_h1: int | None = None
     sells_h1: int | None = None
     buyers_h1: int | None = None
     sellers_h1: int | None = None
     price_change_h1_pct: float | None = None
+    #: Verlinkte Aussenauftritte, z.B. {"twitter": "https://x.com/...";}.
+    socials: dict[str, str] = field(default_factory=dict)
+    websites: list[str] = field(default_factory=list)
+
+    @property
+    def mcap_usd(self) -> float | None:
+        """Marktkapitalisierung mit Rueckfall auf die FDV.
+
+        Angezeigt und geprueft wird die umlaufende Bewertung, weil das die
+        Zahl ist, die auf DexScreener steht. Fehlt sie, ist die FDV die beste
+        verfuegbare Naeherung - bei fixer Supply ohne Sperren sind beide
+        ohnehin gleich.
+        """
+        return self.market_cap_usd or self.fdv_usd
+
+    @property
+    def volume_to_mcap(self) -> float | None:
+        """Stundenvolumen im Verhaeltnis zur Bewertung.
+
+        Ein niedriger Wert heisst, dass die Token kaum den Besitzer wechseln,
+        obwohl die Bewertung hoch ist - die Supply sitzt also fest. Das kann
+        eine ueberzeugte Gemeinschaft sein oder ein einzelner Halter, der den
+        Kurs stellt; unterscheiden laesst sich das hier noch nicht.
+        """
+        mcap = self.mcap_usd
+        if not mcap or self.volume_h1_usd is None:
+            return None
+        return self.volume_h1_usd / mcap
+
+    @property
+    def has_socials(self) -> bool:
+        return bool(self.socials or self.websites)
 
     @property
     def age_minutes(self) -> float | None:
@@ -244,6 +279,8 @@ class TokenCandidate:
         data["age_minutes"] = self.age_minutes
         data["momentum"] = self.momentum
         data["traction"] = self.traction
+        data["mcap_usd"] = self.mcap_usd
+        data["volume_to_mcap"] = self.volume_to_mcap
         return data
 
 
@@ -335,6 +372,9 @@ class RiskReport:
     findings: list[Finding] = field(default_factory=list)
     mint_info: MintInfo | None = None
     distribution: HolderDistribution | None = None
+    #: Ausgewerteter Kursverlauf, falls Kerzen vorlagen. Bewusst getrennt von
+    #: den Befunden: die Richtung ist eine Beobachtung, keine Bewertung.
+    structure: Any | None = None
     errors: list[str] = field(default_factory=list)
 
     def add(self, finding: Finding) -> None:
@@ -397,5 +437,6 @@ class RiskReport:
             }
             if self.distribution
             else None,
+            "structure": self.structure.to_dict() if self.structure else None,
             "errors": list(self.errors),
         }

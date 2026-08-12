@@ -127,11 +127,26 @@ def format_report(report: RiskReport, verbose: bool = False, color: bool | None 
             "   (beschreibt Bewegung, nicht Qualitaet)"
         )
         lines.append(
-            f"  Markt: Liq {_money(candidate.liquidity_usd)}"
+            f"  Markt: MCap {_money(candidate.mcap_usd)}"
+            f" | Liq {_money(candidate.liquidity_usd)}"
             f" | Vol 1h {_money(candidate.volume_h1_usd)}"
-            f" | FDV {_money(candidate.fdv_usd)}"
             f" | Alter {_age(candidate.age_minutes)}"
         )
+        links = sorted(candidate.socials)
+        if candidate.websites:
+            links.append("website")
+        if links:
+            lines.append(f"  Auftritt: {', '.join(links)}")
+
+    structure = report.structure
+    if structure is not None and structure.readable:
+        labels = {"up": "Aufwaerts", "down": "Abwaerts", "sideways": "Seitwaerts"}
+        line = f"  Verlauf: {labels.get(structure.trend.value, 'unklar')}"
+        if structure.change_pct is not None:
+            line += f" | {structure.change_pct:+.0f}% ueber {structure.candle_count} Kerzen"
+        if structure.drawdown_pct is not None:
+            line += f" | {structure.drawdown_pct:.0f}% unter Hoch"
+        lines.append(line)
 
     distribution = report.distribution
     if distribution:

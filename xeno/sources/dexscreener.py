@@ -25,6 +25,37 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _links(info: Any) -> tuple[dict[str, str], list[str]]:
+    """Zieht Aussenauftritte aus dem ``info``-Block eines Paares.
+
+    Die Daten liegen laengst in jeder Antwort - hier werden sie nur nicht
+    mehr weggeworfen. Ob ein Token ueberhaupt eine Seite, einen X-Account
+    oder eine Gruppe hinterlegt hat, kostet damit keine einzige zusaetzliche
+    Anfrage.
+    """
+    if not isinstance(info, dict):
+        return {}, []
+
+    socials: dict[str, str] = {}
+    for entry in info.get("socials") or []:
+        if not isinstance(entry, dict):
+            continue
+        kind = str(entry.get("type") or "").strip().lower()
+        url = str(entry.get("url") or "").strip()
+        # Der erste Eintrag je Art gewinnt - Dubletten sind haeufig.
+        if kind and url and kind not in socials:
+            socials[kind] = url
+
+    websites: list[str] = []
+    for entry in info.get("websites") or []:
+        url = entry.get("url") if isinstance(entry, dict) else entry
+        url = str(url or "").strip()
+        if url and url not in websites:
+            websites.append(url)
+
+    return socials, websites
+
+
 class DexScreener:
     def __init__(self, http: HttpClient | None = None, chain: str = "solana") -> None:
         self.http = http or HttpClient(rate_limit=4.0)
@@ -192,9 +223,18 @@ class DexScreener:
         candidate.volume_h1_usd = keep(candidate.volume_h1_usd, _to_float(volume.get("h1")))
         candidate.volume_h24_usd = keep(candidate.volume_h24_usd, _to_float(volume.get("h24")))
         candidate.fdv_usd = keep(candidate.fdv_usd, _to_float(pair.get("fdv")))
+        candidate.market_cap_usd = keep(
+            candidate.market_cap_usd, _to_float(pair.get("marketCap"))
+        )
         candidate.buys_h1 = keep(candidate.buys_h1, h1.get("buys"))
         candidate.sells_h1 = keep(candidate.sells_h1, h1.get("sells"))
         candidate.price_change_h1_pct = keep(
             candidate.price_change_h1_pct, _to_float(price_change.get("h1"))
         )
+
+        socials, websites = _links(pair.get("info"))
+        if socials and not candidate.socials:
+            candidate.socials = socials
+        if websites and not candidate.websites:
+            candidate.websites = websites
         return candidate

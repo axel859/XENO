@@ -22,9 +22,22 @@ from .checks import TokenData, run_checks
 from .config import Settings
 from .models import RiskReport, TokenCandidate
 from .net import HttpClient, SolanaRpc
-from .sources import DexScreener, RugCheck
+from .sources import DexScreener, GeckoTerminal, RugCheck
 from .sources.helius import Helius
 from .sources.jupiter import Jupiter
+from .structure import analyse as analyse_structure
+
+#: So viele Wallets werden auf ihre Geldherkunft geprueft. Jede kostet eine
+#: Anfrage, deshalb die Grenze - und deshalb nur die groessten: bei einem
+#: Buendel sitzt die Supply oben, nicht im langen Schwanz.
+FUNDING_BUDGET = 10
+
+#: Kerzenaufloesung fuer die Strukturanalyse. Fuenf Minuten ist der
+#: Kompromiss, der bei einem zwei Stunden alten Token noch zwei Dutzend
+#: Kerzen ergibt und bei einem zwei Tage alten nicht im Rauschen untergeht.
+CANDLE_TIMEFRAME = "minute"
+CANDLE_AGGREGATE = 5
+CANDLE_LIMIT = 120
 
 
 def _key_from(rpc_url: str) -> str:
@@ -42,6 +55,7 @@ class TokenAnalyzer:
         jupiter: Jupiter | None = None,
         dexscreener: DexScreener | None = None,
         helius: Helius | None = None,
+        gecko: GeckoTerminal | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         http = HttpClient(
@@ -60,6 +74,7 @@ class TokenAnalyzer:
         self.rugcheck = rugcheck or RugCheck(http)
         self.jupiter = jupiter or Jupiter(http)
         self.dexscreener = dexscreener or DexScreener(http)
+        self.gecko = gecko or GeckoTerminal()
         # Vorgeparste Transaktionen - nur mit Helius-Schluessel verfuegbar.
         self.helius = helius or Helius(
             api_key=Helius().api_key or _key_from(self.settings.rpc_url), http=http
@@ -71,6 +86,8 @@ class TokenAnalyzer:
         candidate: TokenCandidate | None = None,
         test_trade: bool = True,
         trade_pattern: bool = True,
+        read_structure: bool = True,
+        check_funding: bool = True,
     ) -> TokenData:
         """Holt alle Rohdaten. Einzelne Ausfaelle werden vermerkt, nicht geworfen."""
         data = TokenData(mint=mint, candidate=candidate)
@@ -138,6 +155,33 @@ class TokenAnalyzer:
             except Exception as exc:  # noqa: BLE001
                 data.errors.append(f"Transaktionen nicht abrufbar: {exc}")
 
+        # 3c. Herkunft der Gelder der groessten Halter. Der einzige Weg, ein
+        #     Buendel nachzuweisen statt zu vermuten - kostet aber eine
+        #     Anfrage je Wallet, deshalb nur die groessten und gedeckelt.
+        if check_funding and self.helius.available:
+            wallets = self._top_wallets(data)
+            if wallets:
+                try:
+                    data.origins = self.helius.origins(wallets, budget=FUNDING_BUDGET)
+                except Exception as exc:  # noqa: BLE001
+                    data.errors.append(f"Wallet-Herkunft nicht abrufbar: {exc}")
+
+        # 3d. Kursverlauf fuer die Richtungsanalyse. Eine Anfrage, und die
+        #     einzige Datenquelle, die etwas ueber die Richtung sagt - alle
+        #     anderen Pruefungen bewerten nur Sicherheit.
+        pool = data.candidate.pool_address if data.candidate else ""
+        if read_structure and pool:
+            try:
+                candles = self.gecko.candles(
+                    pool,
+                    timeframe=CANDLE_TIMEFRAME,
+                    aggregate=CANDLE_AGGREGATE,
+                    limit=CANDLE_LIMIT,
+                )
+                data.structure = analyse_structure(candles)
+            except Exception as exc:  # noqa: BLE001
+                data.errors.append(f"Kursverlauf nicht abrufbar: {exc}")
+
         # 4. Simulierter Kauf-Verkauf-Test.
         if test_trade:
             try:
@@ -147,18 +191,40 @@ class TokenAnalyzer:
 
         return data
 
+    @staticmethod
+    def _top_wallets(data: TokenData) -> list[str]:
+        """Die groessten echten Halter - ohne Pools, Locker und Boersen.
+
+        Die Auswahl ist entscheidend: waeren Pool-Adressen dabei, teilten
+        sich mehrere "Halter" trivialerweise dieselbe Herkunft, und jeder
+        Token saehe gebuendelt aus.
+        """
+        if data.distribution is None:
+            return []
+        wallets: list[str] = []
+        for holder in data.distribution.holders:
+            if holder.is_excluded or not holder.owner:
+                continue
+            if holder.owner not in wallets:
+                wallets.append(holder.owner)
+        return wallets
+
     def analyze(
         self,
         mint: str,
         candidate: TokenCandidate | None = None,
         test_trade: bool = True,
         trade_pattern: bool = True,
+        read_structure: bool = True,
+        check_funding: bool = True,
     ) -> RiskReport:
         data = self.collect(
             mint,
             candidate=candidate,
             test_trade=test_trade,
             trade_pattern=trade_pattern,
+            read_structure=read_structure,
+            check_funding=check_funding,
         )
         return build_report(data, self.settings)
 
@@ -188,6 +254,7 @@ def build_report(data: TokenData, settings: Settings) -> RiskReport:
         candidate=data.candidate,
         mint_info=data.mint_info,
         distribution=data.distribution,
+        structure=data.structure,
         errors=list(data.errors),
     )
     report.findings = run_checks(data, settings.risk)

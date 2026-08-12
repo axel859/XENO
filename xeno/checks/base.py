@@ -14,9 +14,10 @@ from typing import Callable
 
 from ..config import RiskThresholds
 from ..models import Finding, HolderDistribution, MintInfo, Severity, TokenCandidate
-from ..sources.helius import Trade
+from ..sources.helius import Origin, Trade
 from ..sources.jupiter import RoundTrip
 from ..sources.rugcheck import RugCheckReport
+from ..structure import Structure
 
 
 @dataclass
@@ -35,6 +36,10 @@ class TokenData:
     #: Einzelne Handelsvorgaenge. None heisst "nicht abgerufen" - das ist
     #: etwas anderes als eine leere Liste ("abgerufen, nichts gefunden").
     trades: list[Trade] | None = None
+    #: Ausgewerteter Kursverlauf. None heisst "keine Kerzen abgerufen".
+    structure: Structure | None = None
+    #: Herkunft der groessten Halter. None heisst "nicht abgerufen".
+    origins: list[Origin] | None = None
     errors: list[str] = field(default_factory=list)
 
     @property

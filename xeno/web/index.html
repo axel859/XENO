@@ -88,6 +88,26 @@
   .sym { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .score { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; flex: none; }
   .meta { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+
+  /* Marktdaten: Raster statt Fliesstext, damit man beim Vergleichen zweier
+     Karten die Werte untereinander findet. */
+  .figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 8px; margin-top: 9px; }
+  .figures div { min-width: 0; }
+  .figures b { display: block; font-size: 13.5px; font-weight: 600; color: var(--text);
+               font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+  .figures span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .figures .up { color: var(--ok); }
+  .figures .down { color: var(--avoid); }
+  /* Ohne Zeitstempel liest sich eine 40 Minuten alte Zahl wie ein Live-Kurs. */
+  .asof { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .trend { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+           padding: 2px 7px; border-radius: 5px; margin-left: 6px; vertical-align: 1px; }
+  .trend-up       { background: rgba(53,208,127,.16); color: var(--ok); }
+  .trend-down     { background: rgba(239,74,90,.16);  color: var(--avoid); }
+  .trend-sideways { background: rgba(107,118,131,.16); color: var(--unknown); }
+  .links { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .links a { font-size: 11.5px; color: var(--accent); text-decoration: none;
+             border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
   .finding { font-size: 12.5px; margin-top: 5px; padding-left: 15px; position: relative; color: #c3cbd6; }
   .finding::before { content: ""; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
   .finding.critical::before, .finding.high::before { background: var(--avoid); }
@@ -294,24 +314,64 @@ function showTab(name) {
   refresh();
 }
 
+const TREND_LABEL = { up: 'AUFWÄRTS', down: 'ABWÄRTS', sideways: 'SEITWÄRTS' };
+
+function pct(v) {
+  if (v == null) return '–';
+  return (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
+}
+
+function num(v) {
+  if (v == null) return '–';
+  return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v));
+}
+
+function trendChip(s) {
+  if (!s || !TREND_LABEL[s.trend]) return '';
+  return `<span class="trend trend-${esc(s.trend)}">${TREND_LABEL[s.trend]}</span>`;
+}
+
+// Marktdaten stammen aus der letzten Prüfung, nicht von jetzt. Deshalb steht
+// das Alter direkt darunter – sonst liest man einen alten Wert als Live-Kurs.
+function figures(m, h) {
+  const ch = m.price_change_h1_pct;
+  const cls = ch == null ? '' : (ch >= 0 ? ' class="up"' : ' class="down"');
+  return `<div class="figures">
+    <div><b>${money(m.mcap_usd)}</b><span>MCap</span></div>
+    <div><b>${money(m.volume_h1_usd)}</b><span>Vol 1h</span></div>
+    <div><b>${money(m.liquidity_usd)}</b><span>Liquidität</span></div>
+    <div><b${cls}>${pct(ch)}</b><span>1h</span></div>
+    <div><b>${num(m.buyers_h1)}</b><span>Käufer 1h</span></div>
+    <div><b>${num(m.trade_count_h1 ?? (m.buys_h1 + m.sells_h1))}</b><span>Trades 1h</span></div>
+    <div><b>${h.top10_pct != null ? h.top10_pct.toFixed(0) + '%' : '–'}</b><span>Top 10</span></div>
+    <div><b>${m.age_minutes != null ? num(m.age_minutes) + 'min' : '–'}</b><span>Alter</span></div>
+  </div>`;
+}
+
+function linkRow(m) {
+  const out = [];
+  for (const [kind, url] of Object.entries(m.socials || {})) {
+    out.push(`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(kind)}</a>`);
+  }
+  (m.websites || []).forEach(u => out.push(`<a href="${esc(u)}" target="_blank" rel="noopener">web</a>`));
+  return out.length ? `<div class="links">${out.join('')}</div>` : '';
+}
+
 function tokenCard(t) {
   const m = t.market || {};
   const h = t.holders || {};
   const findings = (t.top_findings || [])
     .map(f => `<div class="finding ${esc(f.severity)}">${esc(f.message)}</div>`).join('');
 
-  const bits = [];
-  if (m.liquidity_usd) bits.push('Liq ' + money(m.liquidity_usd));
-  if (h.top10_pct != null) bits.push('Top10 ' + h.top10_pct.toFixed(0) + '%');
-  bits.push('geprüft ' + ago(t.last_checked));
-
   return `<div class="card ${t.watchlisted ? 'wl' : ''}">
     <div class="card-head">
       <span class="badge ${esc(t.verdict)}">${esc(t.verdict)}</span>
-      <span class="sym">${esc(t.symbol || t.mint.slice(0, 10))}</span>
+      <span class="sym">${esc(t.symbol || t.mint.slice(0, 10))}${trendChip(t.structure)}</span>
       <span class="score">${t.score}/100</span>
     </div>
-    <div class="meta">${esc(bits.join('  ·  '))}</div>
+    ${figures(m, h)}
+    <div class="asof">Zahlen von der Prüfung vor ${esc(ago(t.last_checked))}</div>
+    ${linkRow(m)}
     ${findings}
     <div class="mint">${esc(t.mint)}</div>
     <div class="card-actions">
@@ -381,8 +441,10 @@ function refresh() {
             <div class="alert-kind kind-${esc(a.kind)}">${esc(a.title)}</div>
             <div class="card-head" style="margin-top:6px">
               <span class="badge ${esc(a.verdict)}">${esc(a.verdict)}</span>
-              <span class="sym">${esc(a.symbol || a.mint.slice(0, 10))}</span>
+              <span class="sym">${esc(a.symbol || a.mint.slice(0, 10))}${trendChip(a.structure)}</span>
             </div>
+            ${a.market ? figures(a.market, {}) : ''}
+            ${a.market ? linkRow(a.market) : ''}
             ${a.lines.slice(1).map(l => `<div class="finding info">${esc(l)}</div>`).join('')}
             <div class="mint">${esc(a.mint)}</div>
           </div>`).join('')

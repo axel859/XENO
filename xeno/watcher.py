@@ -136,7 +136,13 @@ class Watcher:
         self.state = state or WatchState()
         self.notifier = notifier or ConsoleNotifier()
         self.discovery = discovery or Discovery()
-        self.analyzer = analyzer or TokenAnalyzer(self.settings)
+        # Beide teilen sich denselben GeckoTerminal-Zugang. Zwei getrennte
+        # Clients wuerden ihr Tempo je fuer sich drosseln und zusammen das
+        # Limit der API reissen - der Fehler, der schon einmal dazu gefuehrt
+        # hat, dass die Suche ab dem dritten Durchlauf nichts mehr fand.
+        self.analyzer = analyzer or TokenAnalyzer(
+            self.settings, gecko=self.discovery.gecko
+        )
         self.log = log or (lambda message: print(f"  {message}", file=sys.stderr))
         if tracker is None:
             from .follow import OutcomeTracker

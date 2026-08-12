@@ -105,12 +105,67 @@ class GeckoTerminal:
             volume_h1_usd=_to_float(volume.get("h1")),
             volume_h24_usd=_to_float(volume.get("h24")),
             fdv_usd=_to_float(attributes.get("fdv_usd")),
+            market_cap_usd=_to_float(attributes.get("market_cap_usd")),
             buys_h1=h1.get("buys"),
             sells_h1=h1.get("sells"),
             buyers_h1=h1.get("buyers"),
             sellers_h1=h1.get("sellers"),
             price_change_h1_pct=_to_float(price_change.get("h1")),
         )
+
+    def candles(
+        self,
+        pool_address: str,
+        timeframe: str = "minute",
+        aggregate: int = 5,
+        limit: int = 100,
+    ) -> list["Candle"]:
+        """Kerzen eines Pools, aelteste zuerst.
+
+        Die API liefert ``[zeit, open, high, low, close, volumen]`` mit der
+        neuesten Kerze an erster Stelle. Umgedreht wird hier, weil jede
+        Auswertung den Verlauf in Leserichtung braucht.
+
+        Fuer junge Token sind Fuenf-Minuten-Kerzen der brauchbare Kompromiss:
+        die Minutenkerze ist bei duennen Pools fast nur Rauschen, die
+        Stundenkerze existiert nach zwei Stunden erst zweimal.
+        """
+        from ..structure import Candle
+
+        payload = self.http.get(
+            f"{BASE_URL}/networks/{self.network}/pools/{pool_address}/ohlcv/{timeframe}",
+            params={"aggregate": aggregate, "limit": limit},
+        )
+        # Bewusst Schritt fuer Schritt geprueft: bei Stoerungen liefert die
+        # API auch schon mal eine Fehlerseite statt JSON, und daran soll
+        # nicht der ganze Deep-Check haengenbleiben.
+        if not isinstance(payload, dict):
+            return []
+        data = payload.get("data")
+        attributes = data.get("attributes") if isinstance(data, dict) else None
+        rows = attributes.get("ohlcv_list") if isinstance(attributes, dict) else None
+        if not isinstance(rows, list):
+            return []
+
+        candles: list[Candle] = []
+        for row in rows:
+            if not isinstance(row, (list, tuple)) or len(row) < 5:
+                continue
+            values = [_to_float(v) for v in row[:6]]
+            if any(v is None for v in values[:5]):
+                continue
+            candles.append(
+                Candle(
+                    time=int(values[0]),
+                    open=values[1],
+                    high=values[2],
+                    low=values[3],
+                    close=values[4],
+                    volume=values[5] if len(values) > 5 and values[5] else 0.0,
+                )
+            )
+        candles.sort(key=lambda c: c.time)
+        return candles
 
     @staticmethod
     def quote_mint(entry: dict[str, Any]) -> str:

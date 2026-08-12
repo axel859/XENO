@@ -7,6 +7,7 @@ realistischen Werten zu fuellen.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -18,6 +19,39 @@ from xeno.models import Holder, HolderDistribution, MintInfo, TokenCandidate
 from xeno.sources.rugcheck import RugCheckReport
 
 MINT = "25a7whvEzPqceUt5vVSfxVbqzjJrg4oEqbCHvAsupump"
+
+#: Umgebungsvariablen, die das Verhalten von XENO steuern.
+_ENV_KEYS = (
+    "HELIUS_API_KEY",
+    "XENO_RPC_URL",
+    "XENO_STATE_FILE",
+    "XENO_WEB_TOKEN",
+    "XENO_PROFILE",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolated_environment():
+    """Trennt jeden Test von der Umgebung - davor und danach.
+
+    Zwei Wege fuehren sonst zu Tests, die je nach Rechner anders ausgehen:
+    ein gesetzter Schluessel auf dem Entwicklungsrechner, und ``load_dotenv``,
+    das beim Pruefen des Einlesens direkt in ``os.environ`` schreibt. Letzteres
+    entzieht sich ``monkeypatch``, weil die Variable vorher gar nicht existierte -
+    sie bleibt danach stehen und versetzt spaetere Tests still in einen
+    anderen Zustand.
+    """
+    saved = {key: os.environ.get(key) for key in _ENV_KEYS}
+    for key in _ENV_KEYS:
+        os.environ.pop(key, None)
+    try:
+        yield
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 @pytest.fixture
