@@ -201,6 +201,32 @@ def _build_notifier(args: argparse.Namespace):
     return MultiNotifier(channels) if len(channels) > 1 else channels[0]
 
 
+def _live_feed(settings: Settings, enabled: bool, log=None):
+    """Erzeugt den Live-Strom aus der RPC-Adresse.
+
+    Der WebSocket laeuft ueber dieselbe Adresse wie der RPC, nur mit wss://
+    statt https://. Der oeffentliche Solana-Knoten laesst keine Abos zu,
+    deshalb braucht der Live-Modus einen eigenen Zugang.
+    """
+    if not enabled:
+        return None
+    if settings.uses_public_rpc:
+        print(
+            "  Live-Modus nicht moeglich: der oeffentliche RPC erlaubt keine\n"
+            "  Abonnements. HELIUS_API_KEY in der .env setzen.",
+            file=sys.stderr,
+        )
+        return None
+
+    from .live import LiveFeed
+
+    ws_url = settings.rpc_url.replace("https://", "wss://").replace("http://", "ws://")
+    feed = LiveFeed(ws_url)
+    if feed.start(on_error=log):
+        print("  Live-Strom aktiv (neue Token in Sekunden statt Minuten)", file=sys.stderr)
+    return feed
+
+
 def cmd_watch(args: argparse.Namespace) -> int:
     from .watcher import Watcher
     from .watchstate import WatchState
@@ -243,13 +269,20 @@ def cmd_watch(args: argparse.Namespace) -> int:
         return 0
 
     settings = _apply_overrides(Settings.from_env(getattr(args, 'profile', None)), args)
-    watcher = Watcher(settings, state=state, notifier=_build_notifier(args))
-    watcher.run(
-        interval=args.interval,
-        budget=args.budget,
-        test_trade=not args.no_trade_test,
-        max_cycles=args.cycles,
+    live = _live_feed(settings, getattr(args, "live", False))
+    watcher = Watcher(
+        settings, state=state, notifier=_build_notifier(args), live=live
     )
+    try:
+        watcher.run(
+            interval=args.interval,
+            budget=args.budget,
+            test_trade=not args.no_trade_test,
+            max_cycles=args.cycles,
+        )
+    finally:
+        if live is not None:
+            live.stop()
     return 0
 
 
@@ -293,6 +326,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             use_desktop=not args.no_desktop,
             sound=not args.no_sound,
             only_important=args.only_important,
+            live=_live_feed(settings, getattr(args, "live", False)),
         )
     except OSError as exc:
         print(f"Server konnte nicht starten: {exc}", file=sys.stderr)
@@ -509,6 +543,14 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--json", action="store_true", help="Ausgabe als JSON")
         target.add_argument("-v", "--verbose", action="store_true", help="alle Befunde zeigen")
 
+    def add_live(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--live",
+            action="store_true",
+            help="neue Token per WebSocket sofort empfangen statt sie abzufragen "
+            "(braucht HELIUS_API_KEY oder XENO_RPC_URL)",
+        )
+
     def add_alerting(target: argparse.ArgumentParser) -> None:
         target.add_argument(
             "--no-desktop", action="store_true", help="keine Systemmeldungen"
@@ -583,6 +625,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_watch.add_argument("--state-file", help="Pfad der Zustandsdatei")
     p_watch.add_argument("--log-file", help="jede Meldung als JSON-Zeile anhaengen")
     add_alerting(p_watch)
+    add_live(p_watch)
     p_watch.add_argument(
         "--no-trade-test", action="store_true", help="Kauf-/Verkaufstest ueberspringen"
     )
@@ -625,6 +668,7 @@ def build_parser() -> argparse.ArgumentParser:
         "einzutippen), mindestens 6 Zeichen",
     )
     add_alerting(p_serve)
+    add_live(p_serve)
     p_serve.add_argument(
         "--no-autostart", action="store_true", help="Watcher nicht automatisch starten"
     )

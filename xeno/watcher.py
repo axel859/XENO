@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 from .analyzer import TokenAnalyzer
 from .config import Settings
-from .discovery import Discovery
+from .discovery import Discovery, merge_candidates
 from .models import Finding, RiskReport, Severity, TokenCandidate, Verdict
 from .notify import Alert, AlertKind, ConsoleNotifier, Notifier
 from .pipeline import rank_key
@@ -46,6 +46,8 @@ class CycleStats:
     alerts: int = 0
     #: Nachtraeglich gemessene Kursverlaeufe frueher gepruefter Token.
     measured: int = 0
+    #: Kandidaten, die aus dem Live-Strom kamen statt aus der Abfrage.
+    live: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -128,6 +130,7 @@ class Watcher:
         analyzer: TokenAnalyzer | None = None,
         log=None,
         tracker=None,
+        live=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.state = state or WatchState()
@@ -140,6 +143,8 @@ class Watcher:
 
             tracker = OutcomeTracker(self.state)
         self.tracker = tracker
+        #: Optionaler Live-Strom. Ohne ihn arbeitet der Watcher wie bisher.
+        self.live = live
 
     # -- Ein Durchlauf ----------------------------------------------------
 
@@ -191,6 +196,36 @@ class Watcher:
 
         return queue[:budget]
 
+    def _collect_live(self, stats: CycleStats) -> list[TokenCandidate]:
+        """Holt gereifte Token aus dem Live-Strom und ergaenzt Marktdaten."""
+        from datetime import datetime, timezone
+
+        min_age = self.settings.screen.min_age_minutes * 60.0
+        matured = self.live.take_matured(min_age_seconds=min_age, limit=60)
+        # Wer nach dem Vielfachen des Zielfensters immer noch wartet, wird
+        # nicht mehr geprueft - sonst waechst die Liste unbegrenzt.
+        self.live.drop_stale(self.settings.screen.max_age_hours * 3600)
+        if not matured:
+            return []
+
+        candidates = [
+            TokenCandidate(
+                mint=token.mint,
+                symbol=token.symbol,
+                name=token.name,
+                source="live:pumpfun",
+                # Der genaueste Zeitpunkt, den es gibt - direkt vom Ereignis.
+                created_at=datetime.fromtimestamp(token.seen_at, tz=timezone.utc),
+            )
+            for token in matured
+        ]
+
+        try:
+            return self.analyzer.dexscreener.enrich_many(candidates)
+        except Exception as exc:  # noqa: BLE001
+            stats.errors.append(f"Marktdaten fuer Live-Token fehlgeschlagen: {exc}")
+            return []
+
     def cycle(
         self,
         budget: int = 8,
@@ -225,6 +260,16 @@ class Watcher:
         except Exception as exc:  # noqa: BLE001
             stats.errors.append(f"Discovery fehlgeschlagen: {exc}")
             candidates = []
+
+        # Token aus dem Live-Strom dazunehmen. Sie kommen mit dem exakten
+        # Geburtszeitpunkt und werden erst herausgegeben, wenn sie alt genug
+        # fuer eine Beurteilung sind. Wo die Abfrage denselben Token spaeter
+        # mit reicheren Daten liefert, gewinnt die vollstaendigere Fassung.
+        if self.live is not None:
+            live_candidates = self._collect_live(stats)
+            if live_candidates:
+                candidates = merge_candidates([candidates, live_candidates])
+                stats.live = len(live_candidates)
 
         # Null Kandidaten ohne gemeldeten Fehler waere frueher stumm
         # geblieben - genau der Fall, der wie ein defekter Bot aussieht.
@@ -328,6 +373,7 @@ class Watcher:
                         f"Durchlauf {cycles + 1}: {stats.discovered} gefunden, "
                         f"{stats.passed_screen} gefiltert, {stats.checked} geprueft, "
                         f"{stats.alerts} gemeldet"
+                        + (f", {stats.live} live" if stats.live else "")
                         + (f", {stats.measured} nachverfolgt" if stats.measured else "")
                     )
                     for error in stats.errors:

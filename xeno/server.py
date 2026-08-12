@@ -376,6 +376,15 @@ class Handler(BaseHTTPRequestHandler):
             "uptime": time.time() - self.app.started_at,
             "uses_public_rpc": self.app.settings.uses_public_rpc,
             "watchlist": len(self.app.state.watchlist),
+            "live": (
+                {
+                    "running": self.watcher_thread.watcher.live.running,
+                    "received": self.watcher_thread.watcher.live.received,
+                    "pending": self.watcher_thread.watcher.live.pending_count,
+                }
+                if self.watcher_thread.watcher.live is not None
+                else None
+            ),
             "profile": (
                 {
                     "name": self.app.settings.profile.name,
@@ -455,6 +464,7 @@ def build_server(
     use_desktop: bool = True,
     sound: bool = True,
     only_important: bool = False,
+    live=None,
 ) -> tuple[ThreadingHTTPServer, AppState, WatcherThread]:
     settings = settings or Settings.from_env()
     state = state or WatchState()
@@ -489,6 +499,7 @@ def build_server(
         discovery=Discovery(),
         analyzer=analyzer,
         log=app.log,
+        live=live,
     )
     watcher_thread = WatcherThread(app, watcher)
 

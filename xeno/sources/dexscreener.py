@@ -93,6 +93,50 @@ class DexScreener:
             if p.get("chainId") == self.chain
         )
 
+    def enrich_many(
+        self, candidates: list[TokenCandidate], batch_size: int = 30
+    ) -> list[TokenCandidate]:
+        """Fuellt Marktdaten fuer viele Kandidaten in wenigen Requests nach.
+
+        Gedacht fuer den Live-Strom: dort kommen die Mints ohne Marktdaten
+        an, und einzeln nachzufragen waere bei rund vierzig Neuzugaengen pro
+        Minute nicht tragbar.
+
+        Achtung bei der Deutung: DexScreener liefert Kaeufe und Verkaeufe,
+        aber **keine eindeutigen Wallets**. Kandidaten aus dieser Quelle
+        haben deshalb kein ``buyers_h1`` - die betreffenden Pruefungen
+        melden dann "keine Aussage moeglich" statt Entwarnung.
+        """
+        if not candidates:
+            return []
+
+        by_mint = {c.mint: c for c in candidates}
+        mints = list(by_mint)
+        best: dict[str, tuple[float, dict[str, Any]]] = {}
+
+        for start in range(0, len(mints), batch_size):
+            chunk = mints[start : start + batch_size]
+            try:
+                payload = self.http.get(
+                    f"{BASE_URL}/latest/dex/tokens/{','.join(chunk)}"
+                )
+            except Exception:  # noqa: BLE001 - eine Luecke ist besser als ein Abbruch
+                continue
+            for pair in (payload or {}).get("pairs") or []:
+                if pair.get("chainId") != self.chain:
+                    continue
+                mint = (pair.get("baseToken") or {}).get("address")
+                if mint not in by_mint:
+                    continue
+                liquidity = _to_float((pair.get("liquidity") or {}).get("usd")) or 0.0
+                if mint not in best or liquidity > best[mint][0]:
+                    best[mint] = (liquidity, pair)
+
+        enriched = []
+        for mint, (_liquidity, pair) in best.items():
+            enriched.append(self._merge(by_mint[mint], pair))
+        return enriched
+
     def enrich(self, candidate: TokenCandidate) -> TokenCandidate:
         """Fuellt fehlende Marktdaten aus DexScreener nach.
 

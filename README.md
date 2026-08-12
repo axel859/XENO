@@ -189,6 +189,41 @@ python3 -m xeno scan --profile established
 
 Dauerhaft festlegen über `XENO_PROFILE=early` in der `.env`.
 
+### Live-Modus — Sekunden statt Minuten
+
+```bash
+python3 -m xeno serve --live
+python3 -m xeno watch --live
+```
+
+Statt alle 60 Sekunden zu fragen, ob es Neues gibt, meldet der Solana-Knoten
+es sofort. XENO abonniert die Programm-Logs von pump.fun; jede Token-Erstellung
+erscheint dort binnen einer Sekunde.
+
+**Kostet keine einzige zusätzliche Anfrage.** Mint, Name, Symbol und Ersteller
+stehen bereits im Log — es muss nichts nachgeladen werden. Gemessen: rund 170
+Ereignisse pro Sekunde über alle pump.fun-Aktivitäten, davon etwa **40
+Token-Erstellungen pro Minute**. Gefiltert wird im Client, bevor irgendetwas
+abgerufen wird.
+
+Zwei Dinge, die der Live-Modus bringt:
+
+- **Vollständigkeit** — jeder neue Token, nicht nur die, die ein Datendienst
+  zufällig schon erfasst hat
+- **Der exakte Geburtszeitpunkt** — statt eines geschätzten Alters
+
+Was er **nicht** bringt: ein Token in Sekunde eins ist nicht bewertbar, denn
+dann hat noch niemand gehandelt. Der Strom sammelt deshalb, und geprüft wird,
+sobald genug Handel für eine Aussage stattgefunden hat. Der Gewinn ist, dass
+XENO den Token dann **von Anfang an kennt** — inklusive genauem Alter.
+
+**Voraussetzung:** ein eigener RPC-Zugang. Der öffentliche Solana-Knoten
+erlaubt keine Abonnements; mit `HELIUS_API_KEY` läuft es.
+
+Technisch: der WebSocket-Client ist selbst geschrieben (RFC 6455), damit das
+Projekt abhängigkeitsfrei bleibt — Python bringt keinen mit. Bricht die
+Verbindung ab, wird mit wachsendem Abstand neu verbunden.
+
 ### Suchbreite: einmalig ≠ dauerhaft
 
 Ein einmaliger `scan` holt bei `early` **10 Seiten** (200 Pools). Der
@@ -609,7 +644,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 264 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 295 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
@@ -646,6 +681,8 @@ xeno/
   notify.py        Konsole, Telegram, JSON-Log
   desktop.py       Systemmeldungen und Signalton
   server.py        Dashboard-Server und JSON-API
+  ws.py            WebSocket-Client (RFC 6455, ohne Fremdbibliothek)
+  live.py          Live-Strom neuer Token, Reifephase vor der Prüfung
   web/index.html   die Oberfläche
 ```
 
