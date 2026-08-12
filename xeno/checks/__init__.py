@@ -18,6 +18,7 @@ from .extensions import check_extensions
 from .holders import check_holders
 from .liquidity import check_liquidity
 from .tradability import check_tradability
+from .tradepattern import check_trade_pattern
 
 ALL_CHECKS: list[Check] = [
     check_authorities,
@@ -26,6 +27,7 @@ ALL_CHECKS: list[Check] = [
     check_holders,
     check_bundling,
     check_botting,
+    check_trade_pattern,
     check_creator,
     check_tradability,
 ]

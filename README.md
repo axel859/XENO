@@ -113,6 +113,7 @@ Wash-Trading). Typisch bleiben davon 20–50 % übrig.
 | **Creator-Historie** | Frühere Launches desselben Wallets und dokumentierte Rugs |
 | **Handelbarkeit** | Simulierter Kauf **und Rückverkauf** über Jupiter — der eigentliche Honeypot-Test |
 | **Maschineller Handel** | Trades pro Wallet und Umsatz ohne Kursbewegung — sieht der Chart echt aus oder gemacht |
+| **Handelsmuster** | Gleichförmige Beträge in den echten Transaktionen — erkennt Wallet-Bündel, die ein Skript fahren |
 
 ### Warum die Pool-Ausklammerung entscheidend ist
 
@@ -157,6 +158,44 @@ Liquidität um, ohne dass der Kurs sich bewegt, kreist dasselbe Geld im Kreis.
 
 Beides kostet **keine zusätzliche Anfrage** — die Zahlen kommen aus Daten, die
 ohnehin geholt werden.
+
+### Eine Ebene tiefer: die echten Transaktionen
+
+Die Zahlen oben sind zusammengefasst. Wer viele Wallets benutzt und mit jeder
+nur einmal handelt, fällt dort **nicht** auf. Genau dieser Fall trat beim
+Ausprobieren auf:
+
+```
+[info  ] Handel wirkt echt: 164 Trades von 90 Wallets (1.8 je Wallet)
+[medium] auffaellig viele identische Betraege: 26% sind exakt 0.0021 SOL
+```
+
+90 verschiedene Wallets — und ein Viertel davon handelt auf den Cent denselben
+Betrag. Das ist ein Bündel, das ein Skript fährt.
+
+Das Merkmal ist die **Gleichförmigkeit der Beträge**. Ein Programm kauft mit
+fest eingestelltem Einsatz; Menschen kaufen 0,13, dann 2,40, dann 0,07.
+Gemessen an echten Token:
+
+| Anteil identischer Beträge | Bewertung |
+|---|---|
+| 2 – 10 % | beobachteter Normalbereich |
+| ab 15 % | Hinweis |
+| ab 25 % | auffällig |
+| ab 40 % | fast alles maschinell |
+
+Kostet **eine** Anfrage pro Token: Helius liefert 100 vorgeparste
+Transaktionen auf einmal. Abschaltbar mit `--no-trade-pattern`, und ohne
+Helius-Key läuft die Prüfung schlicht nicht — dann fehlt sie, statt eine
+Entwarnung vorzutäuschen.
+
+Die Grenzen stammen aus sechs ausgewerteten Token. Das trifft die
+Größenordnung, reicht aber nicht für Feinjustierung — deshalb mit Abstand zum
+Normalbereich gesetzt.
+
+**Nicht umgesetzt:** die Regelmäßigkeit der Zeitabstände. Solana-Zeitstempel
+haben Sekundenauflösung, bei 400-Millisekunden-Blöcken landen zu viele Trades
+im selben Zeitpunkt — daraus lässt sich nichts ablesen.
 
 ### Bewertung
 
@@ -644,7 +683,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 295 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 317 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

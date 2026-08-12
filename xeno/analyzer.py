@@ -23,7 +23,14 @@ from .config import Settings
 from .models import RiskReport, TokenCandidate
 from .net import HttpClient, SolanaRpc
 from .sources import DexScreener, RugCheck
+from .sources.helius import Helius
 from .sources.jupiter import Jupiter
+
+
+def _key_from(rpc_url: str) -> str:
+    from .sources.helius import api_key_from
+
+    return api_key_from(rpc_url)
 
 
 class TokenAnalyzer:
@@ -34,6 +41,7 @@ class TokenAnalyzer:
         rugcheck: RugCheck | None = None,
         jupiter: Jupiter | None = None,
         dexscreener: DexScreener | None = None,
+        helius: Helius | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         http = HttpClient(
@@ -52,12 +60,17 @@ class TokenAnalyzer:
         self.rugcheck = rugcheck or RugCheck(http)
         self.jupiter = jupiter or Jupiter(http)
         self.dexscreener = dexscreener or DexScreener(http)
+        # Vorgeparste Transaktionen - nur mit Helius-Schluessel verfuegbar.
+        self.helius = helius or Helius(
+            api_key=Helius().api_key or _key_from(self.settings.rpc_url), http=http
+        )
 
     def collect(
         self,
         mint: str,
         candidate: TokenCandidate | None = None,
         test_trade: bool = True,
+        trade_pattern: bool = True,
     ) -> TokenData:
         """Holt alle Rohdaten. Einzelne Ausfaelle werden vermerkt, nicht geworfen."""
         data = TokenData(mint=mint, candidate=candidate)
@@ -116,6 +129,15 @@ class TokenAnalyzer:
                 "HELIUS_API_KEY setzen)"
             )
 
+        # 3b. Einzelne Handelsvorgaenge fuer die Musteranalyse. Eine
+        #     Anfrage fuer bis zu hundert Trades - ohne die liesse sich
+        #     maschineller Handel nur an zusammengefassten Zahlen ablesen.
+        if trade_pattern and self.helius.available:
+            try:
+                data.trades = self.helius.recent_trades(mint)
+            except Exception as exc:  # noqa: BLE001
+                data.errors.append(f"Transaktionen nicht abrufbar: {exc}")
+
         # 4. Simulierter Kauf-Verkauf-Test.
         if test_trade:
             try:
@@ -130,8 +152,14 @@ class TokenAnalyzer:
         mint: str,
         candidate: TokenCandidate | None = None,
         test_trade: bool = True,
+        trade_pattern: bool = True,
     ) -> RiskReport:
-        data = self.collect(mint, candidate=candidate, test_trade=test_trade)
+        data = self.collect(
+            mint,
+            candidate=candidate,
+            test_trade=test_trade,
+            trade_pattern=trade_pattern,
+        )
         return build_report(data, self.settings)
 
 

@@ -14,6 +14,7 @@ from typing import Callable
 
 from ..config import RiskThresholds
 from ..models import Finding, HolderDistribution, MintInfo, Severity, TokenCandidate
+from ..sources.helius import Trade
 from ..sources.jupiter import RoundTrip
 from ..sources.rugcheck import RugCheckReport
 
@@ -31,6 +32,9 @@ class TokenData:
     holder_source: str = ""
     #: Ergebnis des simulierten Kauf-Verkauf-Tests, None wenn uebersprungen.
     round_trip: RoundTrip | None = None
+    #: Einzelne Handelsvorgaenge. None heisst "nicht abgerufen" - das ist
+    #: etwas anderes als eine leere Liste ("abgerufen, nichts gefunden").
+    trades: list[Trade] | None = None
     errors: list[str] = field(default_factory=list)
 
     @property

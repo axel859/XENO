@@ -74,7 +74,11 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     reports = []
     for mint in args.mint:
-        report = analyzer.analyze(mint, test_trade=not args.no_trade_test)
+        report = analyzer.analyze(
+            mint,
+            test_trade=not args.no_trade_test,
+            trade_pattern=not getattr(args, "no_trade_pattern", False),
+        )
         reports.append(report)
 
     if args.json:
@@ -588,6 +592,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("mint", nargs="+", help="Mint-Adresse(n)")
     p_check.add_argument(
         "--no-trade-test", action="store_true", help="Kauf-/Verkaufstest ueberspringen"
+    )
+    p_check.add_argument(
+        "--no-trade-pattern",
+        action="store_true",
+        help="Musteranalyse der Transaktionen ueberspringen (spart eine Anfrage je Token)",
     )
     add_common(p_check)
     p_check.set_defaults(func=cmd_check)
