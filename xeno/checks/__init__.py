@@ -11,6 +11,7 @@ from ..config import RiskThresholds
 from ..models import Finding
 from .authority import check_authorities
 from .base import Check, TokenData, finding
+from .botting import check_botting
 from .bundling import check_bundling
 from .creator import check_creator
 from .extensions import check_extensions
@@ -24,6 +25,7 @@ ALL_CHECKS: list[Check] = [
     check_liquidity,
     check_holders,
     check_bundling,
+    check_botting,
     check_creator,
     check_tradability,
 ]

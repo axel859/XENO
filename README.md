@@ -112,6 +112,7 @@ Wash-Trading). Typisch bleiben davon 20–50 % übrig.
 | **Bundling** | Verbundene Wallet-Netzwerke und Wallets mit auffällig gleichen Beständen |
 | **Creator-Historie** | Frühere Launches desselben Wallets und dokumentierte Rugs |
 | **Handelbarkeit** | Simulierter Kauf **und Rückverkauf** über Jupiter — der eigentliche Honeypot-Test |
+| **Maschineller Handel** | Trades pro Wallet und Umsatz ohne Kursbewegung — sieht der Chart echt aus oder gemacht |
 
 ### Warum die Pool-Ausklammerung entscheidend ist
 
@@ -120,6 +121,42 @@ Supply. Ein Konzentrations-Check, der das nicht herausrechnet, meldet für
 **jeden** normalen Token Alarm und ist damit wertlos. XENO markiert bekannte
 AMM-Programme, Burn-Adressen, Locker und Börsen-Wallets und bewertet nur, was
 tatsächlich in privater Hand liegt.
+
+### Echter Chart oder gemachter?
+
+Volumen und ein grüner Chart erzeugen Aufmerksamkeit — genau deshalb werden
+sie hergestellt. Ein Programm schiebt Token zwischen eigenen Wallets hin und
+her, der Token sieht belebt aus, und die echten Käufer kommen von selbst.
+**Von außen wirkt so ein Token oft besser als ein ehrlicher.**
+
+Das klarste Merkmal sind **Trades pro Wallet**:
+
+```
+AI    121 Trades von 8 Wallets   (15 je Wallet)   Kurs +57 %, Volumen 12.677 $
+```
+
+Sieht stark aus — bis man sieht, dass acht Wallets das unter sich ausmachen.
+
+Die Schwellen stammen aus einer Messung an 138 Pools mit nennenswertem
+Handel, nicht aus dem Bauch:
+
+| Trades je Wallet | Anteil der Token | Bewertung |
+|---|---|---|
+| bis 6 | ~70 % | unauffällig, kein Befund |
+| 6 – 12 | ~15 % | Hinweis (LOW) |
+| 12 – 25 | ~10 % | überwiegend maschinell (MEDIUM) |
+| ab 25 | ~5 % | fast nur maschinell (HIGH) |
+
+**Etwas Bot-Handel steckt in fast jedem Chart** — Arbitrage, Sniper, Bots.
+Deshalb ist die Prüfung abgestuft und schlägt erst bei Ausreißern an. Nur die
+obersten Prozent fliegen schon im Vorfilter raus, damit das teure Prüfbudget
+nicht für offensichtliches Wash-Trading draufgeht.
+
+Zweites Signal: **Umsatz ohne Kursbewegung.** Dreht sich das Zwanzigfache der
+Liquidität um, ohne dass der Kurs sich bewegt, kreist dasselbe Geld im Kreis.
+
+Beides kostet **keine zusätzliche Anfrage** — die Zahlen kommen aus Daten, die
+ohnehin geholt werden.
 
 ### Bewertung
 
@@ -572,7 +609,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 245 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 264 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

@@ -28,6 +28,11 @@ SEVERITY_PENALTY: dict[Severity, int] = {
 }
 
 
+#: Unter so vielen Trades laesst sich kein Muster ablesen - drei Trades von
+#: einer Wallet sind kein Bot, sondern schlicht wenig los.
+MIN_TRADES_FOR_PATTERN = 10
+
+
 class Verdict(str, Enum):
     AVOID = "AVOID"
     RISKY = "RISKY"
@@ -128,6 +133,46 @@ class TokenCandidate:
         if not self.liquidity_usd or self.volume_h1_usd is None:
             return None
         return self.volume_h1_usd / self.liquidity_usd
+
+    @property
+    def trade_count_h1(self) -> int | None:
+        if self.buys_h1 is None and self.sells_h1 is None:
+            return None
+        return (self.buys_h1 or 0) + (self.sells_h1 or 0)
+
+    @property
+    def wallet_count_h1(self) -> int | None:
+        """Wie viele verschiedene Wallets ueberhaupt beteiligt waren.
+
+        Kaeufer und Verkaeufer ueberschneiden sich stark, deshalb das Maximum
+        statt der Summe - das ist die vorsichtige Schaetzung und vermeidet,
+        dass Bot-Handel harmloser aussieht als er ist.
+        """
+        if self.buyers_h1 is None and self.sellers_h1 is None:
+            return None
+        return max(self.buyers_h1 or 0, self.sellers_h1 or 0)
+
+    @property
+    def trades_per_wallet(self) -> float | None:
+        """Trades je beteiligter Wallet - das klarste Bot-Merkmal.
+
+        Ein Mensch kauft ein-, vielleicht zweimal. Wer fuenfzig Trades mit
+        drei Wallets macht, schiebt Token zwischen eigenen Adressen hin und
+        her, um Volumen und einen belebten Chart zu erzeugen.
+
+        Gemessen an 138 Pools mit nennenswertem Handel: Median 2.7, oberes
+        Viertel ab 6.5, oberste 5% ab 21. Etwas maschineller Handel ist also
+        voellig normal - erst die Ausreisser sind ein Signal.
+
+        None, wenn zu wenig gehandelt wurde, um etwas abzulesen.
+        """
+        trades = self.trade_count_h1
+        wallets = self.wallet_count_h1
+        if trades is None or wallets is None or trades < MIN_TRADES_FOR_PATTERN:
+            return None
+        if wallets <= 0:
+            return float(trades)
+        return trades / wallets
 
     @property
     def momentum(self) -> int:

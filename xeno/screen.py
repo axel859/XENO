@@ -11,6 +11,7 @@ Ein Token, der das Screening besteht, ist damit ausdruecklich noch nicht
 
 from __future__ import annotations
 
+from .checks.botting import EXTREME_TRADE_RATIO
 from .config import ScreenThresholds
 from .models import ScreenResult, TokenCandidate
 
@@ -55,6 +56,16 @@ def screen(candidate: TokenCandidate, thresholds: ScreenThresholds) -> ScreenRes
     vol_liq = candidate.volume_to_liquidity
     if vol_liq is not None and vol_liq > thresholds.max_volume_to_liquidity:
         reasons.append(f"Volumen/Liquiditaet auffaellig hoch ({vol_liq:.0f}x)")
+
+    # Nur die eindeutigsten Faelle maschinellen Handels - hier geht es darum,
+    # das teure Pruefbudget nicht fuer offensichtliches Wash-Trading
+    # auszugeben. Der abgestufte Blick folgt im Deep-Check; etwas
+    # maschineller Handel steckt in fast jedem Chart und soll hier passieren.
+    ratio = candidate.trades_per_wallet
+    if ratio is not None and ratio >= EXTREME_TRADE_RATIO:
+        reasons.append(
+            f"Handel fast nur maschinell ({ratio:.0f} Trades je Wallet)"
+        )
 
     return ScreenResult(candidate=candidate, passed=not reasons, reasons=reasons)
 
