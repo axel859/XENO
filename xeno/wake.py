@@ -47,9 +47,17 @@ Median        0.61
 Maximum       6.5
 ===========  =====
 
-``MIN_BURST = 6.0`` liegt damit oberhalb von 98% dessen, was selbst unter
-bereits *laufenden* Token normal ist. Bei ruhenden Token - und nur um die
-geht es hier - ist es entsprechend seltener.
+``MIN_BURST = 5.0`` liegt damit zwischen dem 95. und dem 98. Perzentil
+dessen, was selbst unter bereits *laufenden* Token normal ist. Bei ruhenden
+Token - und nur um die geht es hier - ist es entsprechend seltener.
+
+Der Wert war zunaechst 6.0 und wurde bewusst gesenkt: ein Puls gegen echte
+Daten meldete damit null Treffer bei 76 auswertbaren Token, der knappste
+Fall lag bei 5.2 mit +17% Kurs. Der ist ein echtes Ereignis, und ihn nicht
+zu melden waere genau der Fehler, gegen den diese Schicht gebaut ist. Der
+Preis ist etwa die doppelte Meldungsrate - tragbar, weil jede Meldung
+ohnehin durch die Tiefpruefung muss und ``MAX_PER_CYCLE`` die Kosten
+deckelt. Dies ist die eine Zahl, an der sich hier sinnvoll drehen laesst.
 
 Zwei Fallstricke, die beim Messen aufgefallen sind
 --------------------------------------------------
@@ -77,7 +85,7 @@ from .sources import DexScreener
 from .watchstate import TokenState, WatchState
 
 #: Stundenvolumen im Verhaeltnis zum eigenen Tagesschnitt. Siehe Messung oben.
-MIN_BURST = 6.0
+MIN_BURST = 5.0
 
 #: Der Kurs muss mitgehen. Volumen bei fallendem Kurs ist ein Ausverkauf,
 #: kein Aufwachen - da verlaesst gerade jemand die Position.

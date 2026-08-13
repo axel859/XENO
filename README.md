@@ -928,14 +928,18 @@ Die Schwelle stammt aus einer Messung an 53 aktiv gehandelten Token
 | 98 %      | 6,43  |
 | Maximum   | 6,5   |
 
-`MIN_BURST = 6.0` liegt damit über 98 % dessen, was selbst unter bereits
-*laufenden* Token normal ist. Dazu müssen Kurs (**+10 % in einer Stunde**) und
-Absolutvolumen (**≥ 2.000 USD**) mitgehen. Ein Volumensprung bei fallendem Kurs
-ist ein Ausverkauf, kein Aufwachen.
+`MIN_BURST = 5.0` liegt damit zwischen dem 95. und dem 98. Perzentil dessen, was
+selbst unter bereits *laufenden* Token normal ist. Dazu müssen Kurs (**+10 % in
+einer Stunde**) und Absolutvolumen (**≥ 2.000 USD**) mitgehen. Ein Volumensprung
+bei fallendem Kurs ist ein Ausverkauf, kein Aufwachen.
 
-Gemeldet wird selten — im Live-Test null Treffer bei 76 auswertbaren Token, der
-knappste Fall lag bei burst 5,2. Wer lieber mehr sehen will, senkt `MIN_BURST`
-in `xeno/wake.py`; das ist die eine Zahl, an der man hier dreht.
+Der Wert stand zunächst auf 6,0 und wurde bewusst gesenkt: ein Puls gegen echte
+Daten meldete damit **null** Treffer bei 76 auswertbaren Token — der knappste Fall
+lag bei burst 5,2 mit +17 % Kurs. Das ist ein echtes Ereignis, und es nicht zu
+melden wäre genau der Fehler, gegen den diese Schicht gebaut ist. Der Preis ist
+rund die doppelte Meldungsrate; tragbar, weil jede Meldung ohnehin durch die
+Tiefprüfung muss und die Zahl je Durchlauf gedeckelt ist. `MIN_BURST` in
+`xeno/wake.py` ist die eine Zahl, an der sich hier sinnvoll drehen lässt.
 
 ### Zwei Fallstricke, die beim Messen auffielen
 
@@ -1178,7 +1182,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 625 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 627 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

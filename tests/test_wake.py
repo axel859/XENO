@@ -178,6 +178,22 @@ class TestTreffer:
         assert not any("497937" in r for r in result.reasons)
         assert any("praktisch still" in r for r in result.reasons)
 
+    def test_the_near_miss_from_the_live_test_now_reports(self):
+        """Der Fall, wegen dem die Schwelle von 6.0 auf 5.0 gesenkt wurde.
+
+        Ein Puls gegen echte Daten meldete bei 6.0 null Treffer bei 76
+        auswertbaren Token; der knappste lag bei burst 5.2 mit +17% Kurs.
+        Das ist ein echtes Ereignis - es nicht zu melden waere genau der
+        Fehler, gegen den diese Schicht gebaut ist.
+        """
+        nogay = token(volume_h1=5.2 * 4_000, volume_h24=24 * 4_000, change=17.2)
+        assert detect(nogay, known(), NOW) is not None
+
+    def test_the_threshold_is_a_deliberate_value(self):
+        """Gemessen, nicht geraten: zwischen dem 95. (4.00) und dem 98.
+        Perzentil (6.43) aktiv gehandelter Token."""
+        assert MIN_BURST == 5.0
+
     def test_just_below_the_threshold_does_not(self):
         below = token(volume_h1=(MIN_BURST - 0.5) * 4_000, volume_h24=24 * 4_000)
         assert detect(below, known(), NOW) is None
