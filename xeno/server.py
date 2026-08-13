@@ -354,6 +354,24 @@ class Handler(BaseHTTPRequestHandler):
             self.app.log(f"Watchlist: {mint[:10]}... hinzugefuegt")
             return self._json({"ok": True, "tokens": self._tokens()})
 
+        if path == "/api/hide":
+            # Ausblenden, nicht loeschen: der Token wird weiter geprueft,
+            # nachverfolgt und beim Aufwachen gemeldet - er steht nur nicht
+            # mehr in der Liste. Loeschen wuerde die Messreihe zerstoeren,
+            # aus der sich "taugen die Urteile" ueberhaupt beantworten laesst.
+            if body.get("all"):
+                count = self.app.state.hide_all()
+                self.app.state.save()
+                self.app.log(f"{count} Token ausgeblendet - laufen im Hintergrund weiter")
+                return self._json({"ok": True, "hidden": count, "tokens": self._tokens()})
+
+            mint = str(body.get("mint") or "").strip()
+            if not _looks_like_mint(mint):
+                return self._error(400, "Das sieht nicht wie eine Mint-Adresse aus")
+            found = self.app.state.set_hidden(mint, True)
+            self.app.state.save()
+            return self._json({"ok": found, "tokens": self._tokens()})
+
         if path == "/api/check":
             mint = str(body.get("mint") or "").strip()
             if not _looks_like_mint(mint):
@@ -375,6 +393,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(401, "Token fehlt oder ist falsch")
 
         path = parsed.path.rstrip("/")
+        if path.startswith("/api/hide/"):
+            mint = path.rsplit("/", 1)[-1]
+            found = self.app.state.set_hidden(mint, False)
+            self.app.state.save()
+            return self._json({"ok": found, "tokens": self._tokens()})
+
         if path.startswith("/api/watchlist/"):
             mint = path.rsplit("/", 1)[-1]
             removed = self.app.state.remove_from_watchlist(mint)
@@ -444,7 +468,10 @@ class Handler(BaseHTTPRequestHandler):
             # Bericht aus dem Speicher gefallen war, nur noch "-".
             report = reports.get(entry["mint"])
             if report:
-                market = report.get("market") or {}
+                # Ein Bericht ohne Marktdaten (Pruefung nur ueber die Adresse)
+                # darf die gesicherten Werte nicht loeschen - sonst waere die
+                # Karte nach einer Wiederholungspruefung leerer als vorher.
+                market = report.get("market") or entry.get("market") or {}
                 entry["market"] = market
                 entry["momentum"] = market.get("momentum")
                 entry["holders"] = report.get("holders") or entry.get("holders")

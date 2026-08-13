@@ -603,6 +603,18 @@ ob man etwas findet, sondern ob man die Menge einschränken kann. Über der List
 stehen die Urteilsgruppen mit ihren Anzahlen; geladen werden 40 Zeilen auf
 einmal.
 
+**Ausblenden statt Löschen.** Wer neu anfangen will, nimmt die Liste mit einem
+Knopf leer — die Token laufen aber **im Hintergrund weiter**: sie werden erneut
+geprüft, ihr Kurs wird nachverfolgt, und wenn einer aufwacht, meldet er sich.
+Nur die Anzeige ist aufgeräumt.
+
+Löschen wäre die schlechtere Lösung. Die Nachverfolgung misst bis 24 Stunden
+nach dem ersten Urteil, die Aufwach-Erkennung schaut auf alles je Gesehene, und
+`xeno stats` beantwortet die Frage „taugen die Urteile" nur mit genug
+Messungen. Wer aufräumt, will eine ruhige Liste — nicht seine Statistik
+verlieren. Die Watchlist bleibt ohnehin unangetastet, und über den Filter
+**Ausgeblendet** kommt jeder Token einzeln zurück.
+
 ### Vom Handy aus
 
 ```bash
@@ -1218,7 +1230,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 650 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 665 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

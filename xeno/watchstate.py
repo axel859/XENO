@@ -92,6 +92,14 @@ class TokenState:
     #: Wann zuletzt ein Aufwachen gemeldet wurde. Sperrfrist gegen
     #: Dauermeldungen, solange eine Bewegung anhaelt.
     woke_at: float = 0.0
+    #: Aus der Anzeige genommen - laeuft im Hintergrund weiter.
+    #:
+    #: Bewusst kein Loeschen: die Nachverfolgung misst Kurse bis 24 Stunden
+    #: nach dem ersten Urteil, die Aufwach-Erkennung schaut auf alles je
+    #: Gesehene, und ``xeno stats`` beantwortet die Frage "taugen die
+    #: Urteile" nur mit genug Messungen. Wer aufraeumt, will eine ruhige
+    #: Liste - nicht seine Statistik verlieren.
+    hidden: bool = False
     #: Marktstand zum Zeitpunkt der letzten Pruefung, klein gehalten.
     #:
     #: Die vollstaendigen Berichte liegen nur im Speicher und fallen nach
@@ -393,6 +401,30 @@ class WatchState:
             state = self.tokens.get(mint)
             if state is not None:
                 state.alerted_verdict = verdict.value
+
+    def set_hidden(self, mint: str, hidden: bool = True) -> bool:
+        """Nimmt einen Token aus der Anzeige - oder holt ihn zurueck."""
+        with self._lock:
+            state = self.tokens.get(mint)
+            if state is None:
+                return False
+            state.hidden = hidden
+            return True
+
+    def hide_all(self) -> int:
+        """Raeumt die Liste leer, ohne etwas zu verlieren.
+
+        Die Watchlist bleibt sichtbar: dort steht, was jemand ausdruecklich
+        beobachten wollte, und das versehentlich mit auszublenden waere die
+        aergerlichste Variante von "aufgeraeumt".
+        """
+        with self._lock:
+            count = 0
+            for state in self.tokens.values():
+                if not state.hidden and not state.watchlisted:
+                    state.hidden = True
+                    count += 1
+            return count
 
     def mark_woken(self, mint: str, now: float | None = None) -> None:
         """Startet die Sperrfrist der Aufwach-Erkennung fuer diesen Token."""

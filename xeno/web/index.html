@@ -855,15 +855,26 @@ function showMore() {
   refresh();
 }
 
-function renderList(box, tokens) {
+function renderList(box, all) {
+  // Ausgeblendete laufen im Hintergrund weiter – sie stehen nur nicht in
+  // der Liste. Erreichbar bleiben sie über den eigenen Filter.
+  const tokens = all.filter(t => !t.hidden);
+  const buried = all.length - tokens.length;
+
   const counts = {ALLE: tokens.length};
   tokens.forEach(t => { counts[t.verdict] = (counts[t.verdict] || 0) + 1; });
 
-  const chips = FILTER_ORDER.filter(n => n === 'ALLE' || counts[n])
+  let chips = FILTER_ORDER.filter(n => n === 'ALLE' || counts[n])
     .map(n => `<button class="chip ${filter === n ? 'on' : ''}" onclick="setFilter('${n}')">
       ${n === 'ALLE' ? 'Alle' : (GROUP_LABEL[n] || n)}<b>${counts[n] || 0}</b></button>`).join('');
+  if (buried) {
+    chips += `<button class="chip ${filter === 'HIDDEN' ? 'on' : ''}"
+      onclick="setFilter('HIDDEN')">Ausgeblendet<b>${buried}</b></button>`;
+  }
 
-  const list = filter === 'ALLE' ? tokens : tokens.filter(t => t.verdict === filter);
+  const list = filter === 'HIDDEN' ? all.filter(t => t.hidden)
+             : filter === 'ALLE'   ? tokens
+             : tokens.filter(t => t.verdict === filter);
   const page = list.slice(0, shown);
   const rest = list.length - page.length;
 
@@ -871,7 +882,37 @@ function renderList(box, tokens) {
     + (page.length
         ? `<div class="rows">${page.map(tokenRow).join('')}</div>`
           + (rest ? `<button class="more" onclick="showMore()">weitere ${rest} zeigen</button>` : '')
-        : '<div class="empty">Nichts in dieser Gruppe.</div>');
+        : '<div class="empty">Nichts in dieser Gruppe.</div>')
+    + (tokens.length > 12 && filter === 'ALLE'
+        ? `<button class="more" onclick="hideAll()">Liste leeren —
+             ${tokens.length} Token ausblenden</button>`
+        : '');
+}
+
+/* Ausblenden statt löschen. Der Token wird weiter geprüft, nachverfolgt und
+   beim Aufwachen gemeldet — er steht nur nicht mehr in der Liste. Löschen
+   würde die Messreihe zerstören, aus der sich überhaupt erst beantworten
+   lässt, ob die Urteile etwas taugen. */
+function hideAll() {
+  if (!confirm('Alle Token aus der Liste nehmen?\n\n'
+             + 'Sie laufen im Hintergrund weiter: werden geprüft, nachverfolgt '
+             + 'und melden sich, wenn sie aufwachen. Die Watchlist bleibt.\n\n'
+             + 'Zurückholen geht jederzeit über den Filter „Ausgeblendet".')) return;
+  api('/api/hide', {method: 'POST', body: JSON.stringify({all: true})})
+    .then(() => { shown = PAGE; refresh(); })
+    .catch(err => alert('Fehler: ' + err));
+}
+
+function hideOne(mint) {
+  api('/api/hide', {method: 'POST', body: JSON.stringify({mint})})
+    .then(() => { closeSheet(); refresh(); })
+    .catch(err => alert('Fehler: ' + err));
+}
+
+function unhide(mint) {
+  api('/api/hide/' + encodeURIComponent(mint), {method: 'DELETE'})
+    .then(() => { closeSheet(); refresh(); })
+    .catch(err => alert('Fehler: ' + err));
 }
 
 /* ---- Detailblatt --------------------------------------------------------- */
@@ -920,6 +961,9 @@ function openSheet(mint) {
         ${t.watchlisted
           ? `<button class="danger" onclick="removeWatch('${esc(mint)}')">Entfernen</button>`
           : `<button onclick="addWatch('${esc(mint)}')">Beobachten</button>`}
+        ${t.hidden
+          ? `<button onclick="unhide('${esc(mint)}')">Wieder zeigen</button>`
+          : `<button onclick="hideOne('${esc(mint)}')">Ausblenden</button>`}
         <button onclick="runCheck('${esc(mint)}')">Neu prüfen</button>
         <button onclick="window.open('https://dexscreener.com/solana/${esc(mint)}','_blank')">Chart</button>
         <button onclick="closeSheet()">Schließen</button>

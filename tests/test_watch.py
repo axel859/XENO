@@ -601,3 +601,98 @@ class TestMarktdatenImZustand:
             assert entry["market"]["liquidity_usd"] is not None
         finally:
             httpd.server_close()
+
+
+class TestAusblenden:
+    """Ausblenden statt Loeschen.
+
+    Der Wunsch war "die Liste leer, aber im Hintergrund weiterlaufen". Der
+    wichtigste Teil dieser Tests ist deshalb nicht, dass etwas verschwindet
+    - sondern dass alles, was im Hintergrund passiert, weiterlaeuft.
+    Loeschen wuerde die Messreihe zerstoeren, aus der sich ueberhaupt erst
+    beantworten laesst, ob die Urteile etwas taugen.
+    """
+
+    def filled(self, tmp_path, count: int = 5) -> WatchState:
+        state = WatchState(tmp_path / "s.json")
+        for i in range(count):
+            mint = f"{i}" * 40
+            state.tokens[mint] = TokenState(
+                mint=mint, symbol=f"T{i}", first_seen=time.time() - 86400,
+                last_checked=time.time() - 7200, check_count=1, verdict="AVOID",
+                baseline_at=time.time() - 86400, baseline_price_usd=1.0,
+                first_verdict="AVOID",
+            )
+        return state
+
+    def test_hiding_one(self, tmp_path):
+        state = self.filled(tmp_path)
+        assert state.set_hidden("0" * 40)
+        assert state.get("0" * 40).hidden
+
+    def test_bringing_it_back(self, tmp_path):
+        state = self.filled(tmp_path)
+        state.set_hidden("0" * 40)
+        state.set_hidden("0" * 40, False)
+        assert not state.get("0" * 40).hidden
+
+    def test_an_unknown_mint_is_no_crash(self, tmp_path):
+        assert not self.filled(tmp_path).set_hidden("gibtsnicht" * 4)
+
+    def test_hiding_all(self, tmp_path):
+        state = self.filled(tmp_path)
+        assert state.hide_all() == 5
+        assert all(s.hidden for s in state.tokens.values())
+
+    def test_the_watchlist_is_spared(self, tmp_path):
+        """Was jemand ausdruecklich beobachten wollte, mit auszublenden
+        waere die aergerlichste Variante von "aufgeraeumt"."""
+        state = self.filled(tmp_path)
+        state.tokens["0" * 40].watchlisted = True
+        state.hide_all()
+        assert not state.get("0" * 40).hidden
+
+    def test_hiding_twice_counts_once(self, tmp_path):
+        state = self.filled(tmp_path)
+        state.hide_all()
+        assert state.hide_all() == 0
+
+    def test_it_survives_a_restart(self, tmp_path):
+        state = self.filled(tmp_path)
+        state.hide_all()
+        state.save()
+        assert WatchState(tmp_path / "s.json").get("0" * 40).hidden
+
+    # -- der eigentliche Punkt: im Hintergrund laeuft alles weiter --------
+
+    def test_it_is_still_rechecked(self, tmp_path):
+        state = self.filled(tmp_path)
+        state.hide_all()
+        due = [s.mint for s in state.due_for_recheck(time.time())]
+        assert len(due) == 5
+
+    def test_the_price_is_still_measured(self, tmp_path):
+        """``xeno stats`` lebt von diesen Messungen."""
+        from xeno.follow import due_measurements
+
+        state = self.filled(tmp_path)
+        state.hide_all()
+        pending, _missed = due_measurements(state, time.time())
+        assert pending
+
+    def test_it_can_still_wake_up(self, tmp_path):
+        """Ein ausgeblendeter Token, der ploetzlich laeuft, soll sich
+        melden - sonst waere Ausblenden doch ein Loeschen."""
+        from xeno.wake import WakeWatcher
+
+        state = self.filled(tmp_path)
+        state.hide_all()
+        assert len(WakeWatcher().candidates(state, time.time())) == 5
+
+    def test_the_history_is_untouched(self, tmp_path):
+        state = self.filled(tmp_path)
+        state.hide_all()
+        entry = state.get("0" * 40)
+        assert entry.baseline_price_usd == 1.0
+        assert entry.first_verdict == "AVOID"
+        assert entry.check_count == 1

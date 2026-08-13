@@ -285,3 +285,71 @@ class TestSearchApi:
         status, data = get(f"{url}/api/search?q=bonk")
         assert status == 503
         assert "error" in data
+
+
+class TestAusblendenApi:
+    def test_one_token_disappears_from_the_list(self, api):
+        url, _http, _analyzer, app = api
+        from conftest import MINT, make_mint_info
+
+        from xeno.models import RiskReport
+
+        app.state.record(RiskReport(mint=MINT, symbol="T", mint_info=make_mint_info()))
+
+        request = urllib.request.Request(
+            f"{url}/api/hide", method="POST",
+            data=json.dumps({"mint": MINT}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read())
+        assert data["ok"] is True
+        assert next(t for t in data["tokens"] if t["mint"] == MINT)["hidden"] is True
+
+    def test_hiding_everything_at_once(self, api):
+        url, _http, _analyzer, app = api
+        from conftest import make_mint_info
+
+        from xeno.models import RiskReport
+
+        for i in range(4):
+            app.state.record(
+                RiskReport(mint=f"{i}" * 40, symbol="T", mint_info=make_mint_info())
+            )
+        request = urllib.request.Request(
+            f"{url}/api/hide", method="POST", data=json.dumps({"all": True}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read())
+        assert data["hidden"] == 4
+
+    def test_bringing_one_back(self, api):
+        url, _http, _analyzer, app = api
+        from conftest import MINT, make_mint_info
+
+        from xeno.models import RiskReport
+
+        app.state.record(RiskReport(mint=MINT, symbol="T", mint_info=make_mint_info()))
+        app.state.set_hidden(MINT, True)
+
+        request = urllib.request.Request(
+            f"{url}/api/hide/{MINT}", method="DELETE",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read())
+        assert data["ok"] is True
+        assert next(t for t in data["tokens"] if t["mint"] == MINT)["hidden"] is False
+
+    def test_a_bad_address_is_rejected(self, api):
+        url, _http, _analyzer, _app = api
+        request = urllib.request.Request(
+            f"{url}/api/hide", method="POST", data=json.dumps({"mint": "quatsch"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(request, timeout=10)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 400
+        else:
+            raise AssertionError("ungueltige Adresse wurde angenommen")
