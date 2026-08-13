@@ -106,6 +106,10 @@ header {
   -webkit-backdrop-filter: blur(14px) saturate(150%);
   border-bottom: 1px solid var(--line-soft);
 }
+/* Auf einem breiten Bildschirm klebte der Name ganz links, waehrend der
+   Inhalt darunter mittig in seiner 640er-Spalte stand - zwei Achsen auf
+   einer Seite. Der Kopf bekommt dieselbe Spalte. */
+.brand, .sub { max-width: 640px; margin-left: auto; margin-right: auto; }
 
 .brand { display: flex; align-items: center; gap: 11px; }
 
@@ -1248,9 +1252,36 @@ function posRow(p, i) {
 
 /* ---- Abfrageschleife -------------------------------------------------------- */
 
+/* Ein fehlender Token sah bisher aus wie ein kaputter Bot: die Seite lud,
+   blieb aber komplett leer, und die einzige Erklärung stand als graue
+   Kleinschrift oben in der Ecke. Das ist der häufigste Fall beim Zugriff
+   vom Handy — und der einzige, den man selbst beheben kann, wenn man
+   erfährt wie.                                                            */
+function tokenHelp() {
+  document.getElementById('notes').innerHTML = `<div class="note warn">
+    <b>Der Link braucht den Token.</b><br>
+    Am PC steht er beim Start hinter der Adresse — der ganze Link, mit
+    <b>?token=…</b> am Ende. Oder hier einfügen:
+    <div class="row" style="margin-top:9px">
+      <input id="tok" placeholder="Token einfügen" autocapitalize="off"
+             autocorrect="off" spellcheck="false">
+      <button class="primary" onclick="useToken()">Verbinden</button>
+    </div></div>`;
+  ['tokens', 'watchlist', 'alerts', 'trades'].forEach(id => {
+    const box = document.getElementById(id);
+    if (box) box.innerHTML = '';
+  });
+}
+
+function useToken() {
+  const value = document.getElementById('tok').value.trim();
+  if (value) location.search = '?token=' + encodeURIComponent(value);
+}
+
 function refresh() {
   api('/api/status').then(renderStatus).catch(err => {
     document.getElementById('sub').textContent = 'keine Verbindung: ' + err;
+    if (String(err).toLowerCase().includes('token')) tokenHelp();
   });
 
   if (tab === 'tokens' || tab === 'watchlist') {

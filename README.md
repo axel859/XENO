@@ -622,7 +622,16 @@ verlieren. Die Watchlist bleibt ohnehin unangetastet, und über den Filter
 python3 -m xeno serve --lan
 ```
 
-Gibt den Zugriff im lokalen WLAN frei und zeigt beim Start den passenden Link:
+Gibt den Zugriff im lokalen WLAN frei und zeigt beim Start den passenden Link.
+**Ohne `--lan` lauscht der Server nur auf 127.0.0.1** — dann ist er
+ausschliesslich vom eigenen Rechner erreichbar, und das Handy bekommt gar
+keine Verbindung.
+
+Der Link enthält einen Token; **ohne ihn bleibt die Seite leer**. Sie sagt in
+dem Fall, was fehlt, und nimmt den Token auch direkt entgegen — das erspart es,
+die ganze Adresse auf dem Handy abzutippen. Wer sich den Link als Lesezeichen
+speichern will, gibt mit `--token ...` einen festen vor; sonst wird bei jedem
+Start ein neuer erzeugt.
 
 ```
 Auf diesem Rechner:  http://127.0.0.1:8000/?token=xxx
