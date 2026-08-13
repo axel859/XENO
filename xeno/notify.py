@@ -37,6 +37,9 @@ class AlertKind(str, Enum):
     CRITICAL_CHANGE = "critical_change"
     DEGRADED = "degraded"
     IMPROVED = "improved"
+    #: Der einzige Anlass, bei dem XENO von sich aus etwas vorschlaegt.
+    #: Alle uebrigen melden nur, dass sich etwas geaendert hat.
+    CALL = "call"
 
 
 _TITLES = {
@@ -44,6 +47,7 @@ _TITLES = {
     AlertKind.CRITICAL_CHANGE: "WARNUNG - kritische Aenderung",
     AlertKind.DEGRADED: "Verschlechtert",
     AlertKind.IMPROVED: "Verbessert",
+    AlertKind.CALL: "CALL",
 }
 
 _ICONS = {
@@ -51,6 +55,7 @@ _ICONS = {
     AlertKind.CRITICAL_CHANGE: "\U0001f6a8",  # Warnleuchte
     AlertKind.DEGRADED: "\U0001f534",  # roter Kreis
     AlertKind.IMPROVED: "\U0001f535",  # blauer Kreis
+    AlertKind.CALL: "\U0001f3af",      # Zielscheibe
 }
 
 
@@ -62,6 +67,9 @@ class Alert:
     #: Befunde, die beim letzten Durchlauf noch nicht da waren.
     new_findings: list[Finding] = field(default_factory=list)
     watchlisted: bool = False
+    #: Zusaetzliche Zeilen, die vor den Befunden erscheinen. Bei einem Call
+    #: stehen hier die Signale und die eigene Trefferbilanz.
+    extra_lines: list[str] = field(default_factory=list)
 
     @property
     def title(self) -> str:
@@ -83,6 +91,8 @@ class Alert:
             )
         else:
             lines.append(f"Urteil: {report.verdict.value} ({report.score}/100)")
+
+        lines.extend(self.extra_lines)
 
         candidate = report.candidate
         if candidate:

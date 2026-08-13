@@ -20,11 +20,13 @@ gerade laeuft.
 
 from __future__ import annotations
 
+import random
 import sys
 import time
 from dataclasses import dataclass, field
 
 from .analyzer import TokenAnalyzer
+from .calls import worth_calling
 from .config import Settings
 from .discovery import Discovery, merge_candidates
 from .models import Finding, RiskReport, Severity, TokenCandidate, Verdict
@@ -36,6 +38,11 @@ from .watchstate import TokenState, WatchState, is_better, is_worse
 #: Urteile, die eine Erstmeldung wert sind. Alles darunter waere Rauschen -
 #: die grosse Mehrheit neuer Token faellt durch.
 ALERT_ON_NEW = frozenset({Verdict.OK, Verdict.CAUTION})
+
+#: So viele der im Vorfilter abgelehnten Token werden je Durchlauf als
+#: Vergleichsstichprobe mitgenommen. Kostet nichts - die Kursabfrage laeuft
+#: ohnehin und liefert dreissig Kurse je Anfrage.
+CONTROL_SAMPLE = 3
 
 
 @dataclass
@@ -58,6 +65,10 @@ class CycleStats:
     denied: int = 0
     #: Verbleibende Credits fuer heute.
     credits_left: int = 0
+    #: Neu aufgenommene Vergleichsstichproben aus den abgelehnten Token.
+    control: int = 0
+    #: Vorschlaege, die alle Bedingungen erfuellt haben.
+    calls: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -141,6 +152,7 @@ class Watcher:
         log=None,
         tracker=None,
         live=None,
+        book=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.state = state or WatchState()
@@ -161,6 +173,13 @@ class Watcher:
         self.tracker = tracker
         #: Optionaler Live-Strom. Ohne ihn arbeitet der Watcher wie bisher.
         self.live = live
+        # Papierhandel. Er ist der Auto-Trader ohne Geld: dieselbe
+        # Entscheidungskette, nur dass am Ende keine Transaktion steht.
+        if book is None:
+            from .paper import PaperBook
+
+            book = PaperBook()
+        self.book = book
 
     # -- Ein Durchlauf ----------------------------------------------------
 
@@ -211,6 +230,71 @@ class Watcher:
             add(state.mint, by_mint.get(state.mint))
 
         return queue[:budget]
+
+    def _call_alert(self, report: RiskReport, call) -> Alert:
+        """Baut die Meldung zu einem Call - mit der eigenen Bilanz daneben.
+
+        Die Trefferquote gehoert an jeden Vorschlag. Ohne sie liest sich ein
+        Call wie eine Gewissheit, und genau das ist er nicht.
+        """
+        return Alert(
+            kind=AlertKind.CALL,
+            report=report,
+            extra_lines=[
+                f"{call.strength} Signale: " + ", ".join(call.reasons),
+                self.book.hit_rate_text(),
+            ],
+        )
+
+    def _update_book(self, stats: CycleStats) -> None:
+        """Holt Kurse fuer offene Positionen und schliesst, was faellig ist."""
+        open_mints = [p.mint for p in self.book.open_positions]
+        if not open_mints:
+            return
+        try:
+            prices = self.analyzer.dexscreener.prices(open_mints)
+        except Exception as exc:  # noqa: BLE001
+            stats.errors.append(f"Papierhandel: Kurse nicht abrufbar: {exc}")
+            return
+        for position in self.book.update(prices):
+            result = position.result_usd() or 0.0
+            self.log(
+                f"Papierhandel: {position.symbol or position.mint[:8]} zu "
+                f"{position.exit_reason} geschlossen, {result:+.2f} USD"
+            )
+        self.book.save()
+
+    def _sample_control(self, screened, now: float) -> int:
+        """Zieht ein paar abgelehnte Token als Vergleichsgruppe.
+
+        Zufaellig ausgewaehlt, damit die Gruppe nicht systematisch aus den
+        knapp Gescheiterten besteht - sonst verglichen wir die
+        Durchgelassenen mit ihren naechsten Verwandten statt mit dem Feld.
+        """
+        minimum_age = self.settings.screen.min_age_minutes
+        rejected = []
+        for result in screened:
+            if result.passed or not result.candidate.price_usd:
+                continue
+            if self.state.known(result.candidate.mint):
+                continue
+            # "Zu frisch" ist keine Ablehnung, sondern ein "noch nicht". Der
+            # Token wird in wenigen Minuten regulaer geprueft. Landete er
+            # jetzt in der Vergleichsgruppe, waere er dort fuer immer
+            # gefangen - und die Gruppe bestuende ueberwiegend aus Token,
+            # die nie wirklich beurteilt wurden.
+            age = result.candidate.age_minutes
+            if age is not None and age < minimum_age:
+                continue
+            rejected.append(result)
+        if not rejected:
+            return 0
+        taken = 0
+        for result in random.sample(rejected, min(CONTROL_SAMPLE, len(rejected))):
+            reason = result.reasons[0] if result.reasons else ""
+            if self.state.record_control(result.candidate, reason, now) is not None:
+                taken += 1
+        return taken
 
     def _collect_live(self, stats: CycleStats) -> list[TokenCandidate]:
         """Holt gereifte Token aus dem Live-Strom und ergaenzt Marktdaten."""
@@ -300,8 +384,15 @@ class Watcher:
                 "Keine Kandidaten von der Discovery - Quelle liefert gerade nichts"
             )
 
-        passed = [r.candidate for r in screen_all(candidates, self.settings.screen) if r.passed]
+        screened = screen_all(candidates, self.settings.screen)
+        passed = [r.candidate for r in screened if r.passed]
         stats.passed_screen = len(passed)
+
+        # Vergleichsstichprobe. Bisher verschwanden die abgelehnten Token
+        # spurlos - damit liess sich zwar sagen, wie sich die
+        # durchgelassenen entwickelt haben, aber nie, was der Filter
+        # faelschlich aussortiert hat.
+        stats.control = self._sample_control(screened, now)
 
         for mint, candidate in self.build_queue(passed, budget, now):
             if stop_event is not None and stop_event.is_set():
@@ -328,10 +419,24 @@ class Watcher:
             # gegen den vorherigen Stand.
             self.state.record(report, now=time.time())
 
+            # Call: der einzige Punkt, an dem XENO von sich aus etwas
+            # vorschlaegt. Alles andere sagt nur, dass nichts dagegen
+            # spricht - das ist etwas anderes.
+            if self.book is not None:
+                call = worth_calling(report)
+                if call is not None and self.book.enter(call, now=time.time()):
+                    stats.calls += 1
+                    self.notifier.send(self._call_alert(report, call))
+
             if alert is not None:
                 self.notifier.send(alert)
                 self.state.mark_alerted(mint, report.verdict)
                 stats.alerts += 1
+
+        # Offene Papierpositionen fortschreiben. Kostet nichts und ist der
+        # einzige Weg, die Calls je zu beurteilen.
+        if self.book is not None:
+            self._update_book(stats)
 
         # Nachverfolgung: was ist aus frueher geprueften Token geworden?
         # Kostet keine RPC-Anfragen und konkurriert damit nicht mit dem
@@ -410,6 +515,8 @@ class Watcher:
                         f"{stats.passed_screen} gefiltert, {stats.checked} geprueft, "
                         f"{stats.alerts} gemeldet"
                         + (f", {stats.live} live" if stats.live else "")
+                        + (f", {stats.calls} CALL" if stats.calls else "")
+                        + (f", {stats.control} Vergleich" if stats.control else "")
                         + (f", {stats.measured} nachverfolgt" if stats.measured else "")
                         + (
                             f", {stats.credits} Credits"

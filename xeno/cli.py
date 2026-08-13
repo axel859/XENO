@@ -465,6 +465,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
         print("XENO merkt sich ab jetzt zu jedem geprueften Token den Kurs und")
         print("schaut nach 15min, 1h, 6h und 24h nach. Lass den Bot ein paar")
         print("Stunden laufen, dann steht hier die Auswertung.")
+        _print_paper()
         return 0
 
     summary = summarise(entries)
@@ -472,6 +473,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
         wartend = len(entries)
         print(f"{wartend} Token werden beobachtet, aber noch keine Messung faellig.")
         print("Die erste kommt 15 Minuten nach der jeweiligen Pruefung.")
+        _print_paper()
         return 0
 
     if args.json:
@@ -503,6 +505,16 @@ def cmd_stats(args: argparse.Namespace) -> int:
 
     total = sum(len(v) for v in summary.values())
     print(f"Grundlage: {total} Urteile mit mindestens einer Messung.")
+
+    if "CONTROL" in summary:
+        print(
+            "\nCONTROL ist die Vergleichsgruppe: zufaellig gezogene Token, die der\n"
+            "Vorfilter abgelehnt hat. Laufen sie aehnlich gut wie die\n"
+            "durchgelassenen, filtert XENO nur Zufall. Laufen sie besser,\n"
+            "filtert er in die falsche Richtung."
+        )
+
+    _print_paper()
     print(
         "\nMEDIAN heisst: die Haelfte lief besser, die Haelfte schlechter.\n"
         "Bewusst nicht der Durchschnitt - ein einzelner Hunderter wuerde\n"
@@ -515,6 +527,45 @@ def cmd_stats(args: argparse.Namespace) -> int:
             "sind die Unterschiede zwischen den Gruppen belastbar."
         )
     return 0
+
+
+def _print_paper() -> None:
+    """Die Bilanz des Papierhandels - die eigentliche Antwort.
+
+    Ein Median sagt, wie sich Token entwickelt haben. Diese Zahl sagt, was
+    dabei herausgekommen waere. Das ist nicht dasselbe: sie enthaelt die
+    Ausstiegsregel, und die entscheidet mit.
+    """
+    from .paper import STOP_LOSS, TAKE_PROFIT, PaperBook
+
+    book = PaperBook()
+    result = book.summary()
+    if not result["closed"] and not result["open"]:
+        print("\nPapierhandel: noch keine Calls. Es wird nur bei klarer Lage einer.")
+        return
+
+    print("\nPapierhandel - was mit den Calls herausgekommen waere")
+    print(
+        f"  Regel            100 USD je Call, raus bei {TAKE_PROFIT:.0f}x "
+        f"oder {(1 - STOP_LOSS) * 100:.0f}% Verlust"
+    )
+    print(f"  Abgeschlossen    {result['closed']}  (offen: {result['open']})")
+    if result["closed"]:
+        print(
+            f"  Ergebnis         {result['result_usd']:+.2f} USD auf "
+            f"{result['invested_usd']:.0f} USD Einsatz"
+        )
+        print(f"  Davon im Plus    {result['wins']} ({result['win_rate']:.0f}%)")
+        if result["median_multiple"] is not None:
+            print(
+                f"  Median           {result['median_multiple']:.2f}x  "
+                f"| bester {result['best_multiple']:.2f}x"
+            )
+        if result["reasons"]:
+            grund = ", ".join(f"{k}: {v}" for k, v in sorted(result["reasons"].items()))
+            print(f"  Ausstiege        {grund}")
+    if result["open"]:
+        print(f"  Unrealisiert     {result['unrealised_usd']:+.2f} USD")
 
 
 def cmd_config(args: argparse.Namespace) -> int:

@@ -101,6 +101,17 @@ class TokenState:
     #: Schwung beim ersten Check - fuer die spaetere Auswertung.
     first_momentum: int = 0
 
+    #: Stichprobe aus den im Vorfilter abgelehnten Token. Sie werden nie
+    #: tief geprueft, sondern nur mitgemessen.
+    #:
+    #: Ohne sie kann XENO nur beantworten, wie sich die Token entwickelt
+    #: haben, die er *durchgelassen* hat - seine Fehlalarme bleiben
+    #: unsichtbar. Ein Filter, der seine eigenen Fehler nicht kennt, kann
+    #: sich nicht verbessern.
+    control: bool = False
+    #: Warum der Vorfilter abgelehnt hat.
+    control_reason: str = ""
+
     @property
     def verdict_enum(self) -> Verdict:
         try:
@@ -226,6 +237,10 @@ class WatchState:
         state = self.tokens.get(mint)
         if state is None:
             return True
+        # Vergleichsstichproben werden nie tief geprueft - sonst waeren sie
+        # keine Vergleichsgruppe mehr, sondern Teil der geprueften.
+        if state.control:
+            return False
         if state.dead and not state.watchlisted:
             return False
         now = now or time.time()
@@ -282,6 +297,40 @@ class WatchState:
             state.dead = True
 
         return state
+
+    def record_control(
+        self, candidate, reason: str = "", now: float | None = None
+    ) -> TokenState | None:
+        """Nimmt einen abgelehnten Token als Vergleichsstichprobe auf.
+
+        Ohne Kurs geht das nicht - ohne Ausgangswert waere spaeter nichts zu
+        messen. Bereits bekannte Token werden nicht angefasst: ein Token, der
+        schon geprueft wurde, gehoert in die andere Gruppe.
+        """
+        if not candidate or not candidate.price_usd:
+            return None
+        now = now or time.time()
+        with self._lock:
+            if candidate.mint in self.tokens:
+                return None
+            state = TokenState(
+                mint=candidate.mint,
+                symbol=candidate.symbol,
+                first_seen=now,
+                control=True,
+                control_reason=reason,
+                baseline_at=now,
+                baseline_price_usd=candidate.price_usd,
+                baseline_fdv_usd=candidate.fdv_usd,
+                # Eigene Gruppe in der Auswertung. Ein echtes Urteil hat der
+                # Token nie bekommen - er wurde ja gerade nicht geprueft.
+                first_verdict="CONTROL",
+                first_momentum=candidate.momentum,
+            )
+            if candidate.created_at:
+                state.created_at = candidate.created_at.timestamp()
+            self.tokens[candidate.mint] = state
+            return state
 
     def mark_alerted(self, mint: str, verdict: Verdict) -> None:
         with self._lock:

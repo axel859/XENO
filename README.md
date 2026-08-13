@@ -706,6 +706,95 @@ der Discovery oder einzelnen Token.
 
 ---
 
+## Calls — wann XENO von sich aus etwas vorschlägt
+
+Alle übrigen Prüfungen beantworten eine Frage: **ist das eine Falle?** Ein
+Call ist etwas anderes. Er behauptet, dass gerade etwas losgeht — eine
+Aussage über die Zukunft, keine Feststellung über den Ist-Zustand.
+
+Er wird deshalb **nicht** aus dem Punktestand abgeleitet. Ein hoher Score
+heißt nur „nichts Schlimmes gefunden", und genau das war der Grund, warum
+saubere Token ohne jede Bewegung dasselbe gute Urteil bekamen wie welche,
+die tatsächlich liefen.
+
+Stattdessen Konfluenz — ein Signal ist eine Möglichkeit, zwei sind handelbar,
+drei sind eine Ansage:
+
+| Signal | Erfüllt wenn |
+|---|---|
+| **aufwärts** | Aufwärtstrend oder Bruch nach oben |
+| **beteiligung** | viele verschiedene Käufer *und* Handel wirkt menschlich |
+| **herkunft** | größte Halter nachweislich unabhängig finanziert |
+| **handelbar** | Kauf und Rückverkauf ohne Auffälligkeit |
+| **verteilung** | Supply breit verteilt, kein Bündel |
+| **auftritt** | Website oder Socials hinterlegt |
+
+Dazu eine Grundbedingung — Urteil `OK`, keine schweren Befunde, **keine
+Wissenslücken**. Unwissen ist kein Argument für einen Kauf.
+
+Und eine Liste von Befunden, die einen Call unabhängig von allem anderen
+verhindern: Abwärtstrend, 70 % unter dem Hoch, gleichförmige Handelsbeträge,
+geteilter Geldgeber, Insider-Netzwerk, kein Verkaufsweg. **Kein Gegengewicht
+hebt sie auf** — auch nicht sechs gute Signale.
+
+## Papierhandel — der Auto-Trader ohne Geld
+
+Jeder Call eröffnet eine simulierte Position. Das ist bewusst kein Simulator
+*neben* dem eigentlichen Handel, sondern dieselbe Entscheidungskette: Signal
+rein, Einstieg, Ausstiegsregel, Position schließen, Bilanz. Wer später echtes
+Geld einsetzt, schaltet an genau dieser Stelle um — es entsteht keine zweite
+Software, deren Verhalten von der getesteten abweicht.
+
+```
+Regel: 100 USD je Call, raus bei 2x, bei 40 % Verlust oder nach 24 Stunden
+```
+
+Die Ausstiegsregel ist der eigentliche Inhalt. Ein Einstieg ohne geplanten
+Ausstieg ist kein Handel, sondern eine Hoffnung. Sie steht fest, bevor eine
+Position eröffnet wird, und sie ist stumpf — ein Programm hat gegenüber einem
+Menschen an dieser Stelle genau einen Vorteil: **es wird nicht gierig.**
+
+Ein Token, dessen Markt verschwindet, wird als Totalverlust verbucht, nicht
+als fehlende Messung. Wer das anders macht, rechnet sich die Bilanz schön.
+
+`xeno stats` zeigt am Ende, was herausgekommen wäre:
+
+```
+Papierhandel - was mit den Calls herausgekommen waere
+  Abgeschlossen    14  (offen: 3)
+  Ergebnis         -180.00 USD auf 1400 USD Einsatz
+  Davon im Plus    3 (21%)
+  Ausstiege        verlustgrenze: 9, zeitlimit: 3, ziel: 2
+```
+
+Und diese Zahl steht ab sofort **neben jedem Call**. Ohne sie liest sich ein
+Vorschlag wie eine Gewissheit, und genau das ist er nicht.
+
+## Die Vergleichsgruppe — Fehlalarme sichtbar machen
+
+Bisher verschwanden die im Vorfilter abgelehnten Token spurlos. Von 132
+Kandidaten je Durchlauf blieben 3 übrig; die anderen 129 sah XENO nie wieder.
+
+Damit ließ sich beantworten, wie sich die *durchgelassenen* Token entwickelt
+haben — nie aber, was der Filter fälschlich aussortiert hat. **Ein Filter,
+der seine eigenen Fehler nicht kennt, kann sich nicht verbessern.**
+
+Deshalb wandern jetzt drei zufällig gezogene Abgelehnte je Durchlauf in eine
+Vergleichsgruppe. Sie werden nie tief geprüft, nur mitgemessen, und
+erscheinen in `xeno stats` als eigene Zeile `CONTROL`. Kostet nichts — die
+Kursabfrage läuft ohnehin und liefert 30 Kurse je Anfrage.
+
+Laufen sie ähnlich gut wie die durchgelassenen, filtert XENO nur Zufall.
+Laufen sie besser, filtert er in die falsche Richtung.
+
+Eine Feinheit, die beim ersten echten Durchlauf auffiel: **„zu frisch" ist
+keine Ablehnung, sondern ein „noch nicht"**. Solche Token werden Minuten
+später regulär geprüft — kämen sie in die Vergleichsgruppe, wären sie dort
+für immer gefangen, und die Gruppe bestünde überwiegend aus Token, die nie
+wirklich beurteilt wurden. Sie werden deshalb ausgenommen.
+
+---
+
 ## Was der Bot verbraucht — und warum das eine eigene Schicht ist
 
 Ein RPC-Anbieter rechnet nicht in Anfragen ab, sondern in **Credits**. Und
