@@ -506,7 +506,7 @@ def cmd_telegram_setup(args: argparse.Namespace) -> int:
 
 def cmd_stats(args: argparse.Namespace) -> int:
     """Zeigt, was aus den geprueften Token tatsaechlich geworden ist."""
-    from .follow import HORIZONS, summarise
+    from .follow import HORIZONS, IMPLAUSIBLE_MULTIPLE, summarise
 
     state = _open_state(args)
     entries = [
@@ -558,8 +558,30 @@ def cmd_stats(args: argparse.Namespace) -> int:
             )
         print()
 
-    total = sum(len(v) for v in summary.values())
-    print(f"Grundlage: {total} Urteile mit mindestens einer Messung.")
+    # Gezaehlt werden Token, nicht Tabellenzeilen. Der erste Anlauf stand
+    # hier als ``sum(len(v) for v in summary.values())`` - das summiert die
+    # Zeitpunkte je Urteil, also fuenf Urteile mal drei Zeitpunkte = 15.
+    # Die Fussnote riet damit zur Vorsicht ("15 ist noch wenig"), waehrend
+    # in der Tabelle darueber achthundert Messungen standen.
+    total = sum(
+        1
+        for e in entries
+        if e.first_verdict and any(v is not None for v in (e.outcomes or {}).values())
+    )
+    print(f"Grundlage: {total} Token mit mindestens einer Messung.")
+
+    broken = sum(
+        row.get("broken", 0)
+        for per_horizon in summary.values()
+        for row in per_horizon.values()
+    )
+    if broken:
+        print(
+            f"{broken} Messungen aussortiert: Vielfaches ueber "
+            f"{IMPLAUSIBLE_MULTIPLE:,.0f}x. Da war nicht der Kurs so hoch,\n"
+            "sondern der Ausgangswert kaputt - bei sekundenalten Token liefert\n"
+            "die Kursquelle manchmal fast null."
+        )
 
     if "CONTROL" in summary:
         print(

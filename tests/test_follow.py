@@ -228,6 +228,39 @@ class TestSummary:
         assert row["median"] < 1.0
         assert row["best"] == 100.0
 
+    def test_a_broken_baseline_is_thrown_out_and_counted(self):
+        """Echt aufgetreten: "BESTE 66702.1x" in der Auswertung.
+
+        So ein Vielfaches heisst nicht, dass der Kurs so hoch stand,
+        sondern dass der Ausgangswert kaputt war - bei sekundenalten Token
+        liefert die Kursquelle manchmal fast null. Fliegt es nicht raus,
+        macht es die Spalte BESTE unlesbar und faelscht die Trefferquote.
+        """
+        entries = [
+            self._entry("AVOID", {"1h": 0.8}, "a"),
+            self._entry("AVOID", {"1h": 1.2}, "b"),
+            self._entry("AVOID", {"1h": 66_702.1}, "kaputt"),
+        ]
+        row = summarise(entries)["AVOID"]["1h"]
+        assert row["best"] == 1.2
+        assert row["count"] == 2
+        assert row["broken"] == 1
+
+    def test_it_does_not_count_as_a_winner_either(self):
+        """Sonst stuende bei AVOID eine Trefferquote, die es nicht gibt."""
+        entries = [
+            self._entry("AVOID", {"1h": 0.5}, "a"),
+            self._entry("AVOID", {"1h": 99_999.0}, "kaputt"),
+        ]
+        assert summarise(entries)["AVOID"]["1h"]["winners_pct"] == 0.0
+
+    def test_a_real_big_win_survives(self):
+        """Ein Hundertfaches ist selten, aber echt - das bleibt drin."""
+        entries = [self._entry("OK", {"1h": 210.1}, "a")]
+        row = summarise(entries)["OK"]["1h"]
+        assert row["best"] == 210.1
+        assert row["broken"] == 0
+
     def test_counts_total_losses(self):
         entries = [
             self._entry("AVOID", {"1h": 0.02}, "a"),
@@ -291,3 +324,68 @@ class TestMomentum:
             price_change_h1_pct=250.0, buys_h1=300, sells_h1=20, buyers_h1=150
         )
         assert dangerous_but_pumping.momentum >= 80
+
+
+class TestStatsAusgabe:
+    """Die Fussnote unter der Tabelle.
+
+    Sie entscheidet, ob jemand seinen eigenen Zahlen glaubt - und stand
+    beim ersten Anlauf auf 15, waehrend in der Tabelle darueber
+    achthundert Messungen standen.
+    """
+
+    def run_stats(self, tmp_path, entries, capsys) -> str:
+        import argparse
+
+        from xeno.cli import cmd_stats
+        from xeno.watchstate import WatchState
+
+        state = WatchState(tmp_path / "state.json")
+        for entry in entries:
+            state.tokens[entry.mint] = entry
+        state.save()
+
+        args = argparse.Namespace(state_file=str(tmp_path / "state.json"), json=False)
+        cmd_stats(args)
+        return capsys.readouterr().out
+
+    def test_it_counts_tokens_not_table_rows(self, tmp_path, capsys):
+        """Fuenf Urteile mal drei Zeitpunkte ergaben frueher immer "15" -
+        unabhaengig davon, wie viele Token dahinterstanden."""
+        entries = [
+            TokenState(
+                mint=f"m{i}",
+                first_verdict="OK",
+                outcomes={"15m": 1.1, "1h": 0.9, "6h": 0.8},
+            )
+            for i in range(40)
+        ]
+        out = self.run_stats(tmp_path, entries, capsys)
+        assert "Grundlage: 40 Token" in out
+
+    def test_the_warning_follows_the_real_number(self, tmp_path, capsys):
+        """Bei 40 Token soll die Warnung kommen, bei 200 nicht mehr."""
+        many = [
+            TokenState(mint=f"m{i}", first_verdict="OK", outcomes={"1h": 1.0})
+            for i in range(200)
+        ]
+        assert "noch wenig" not in self.run_stats(tmp_path, many, capsys)
+
+    def test_a_token_without_any_measurement_is_not_counted(self, tmp_path, capsys):
+        """``None`` heisst "Zeitpunkt verpasst" - das ist keine Messung."""
+        entries = [
+            TokenState(mint="a", first_verdict="OK", outcomes={"1h": 1.2}),
+            TokenState(mint="b", first_verdict="OK", outcomes={"1h": None}),
+        ]
+        out = self.run_stats(tmp_path, entries, capsys)
+        assert "Grundlage: 1 Token" in out
+
+    def test_thrown_out_measurements_are_named(self, tmp_path, capsys):
+        """Aussortieren ohne es zu sagen waere das Gegenteil von ehrlich."""
+        entries = [
+            TokenState(mint="a", first_verdict="AVOID", outcomes={"1h": 1.0}),
+            TokenState(mint="b", first_verdict="AVOID", outcomes={"1h": 66_702.1}),
+        ]
+        out = self.run_stats(tmp_path, entries, capsys)
+        assert "1 Messungen aussortiert" in out
+        assert "Ausgangswert kaputt" in out

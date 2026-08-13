@@ -186,11 +186,21 @@ class TestApi:
         assert exc.value.code == 404
 
     def test_watcher_start_and_stop(self, server):
+        """Der Stopp wird angefordert, nicht abgewartet.
+
+        Frueher stand hier ``running is False`` direkt nach dem Stopp - und
+        der Test fiel etwa in jedem vierten Lauf um. Zu Recht: ``stop()``
+        wartet bewusst nur eine Sekunde, weil eine laufende Tokenpruefung
+        mehrere Sekunden im Netz haengen kann. Bis der Thread ausgelaufen
+        ist, meldet der Zustand ``stopping`` - genau das zeigt die
+        Oberflaeche als "haelt an". Ein Test, der etwas anderes behauptet,
+        misst nicht das Verhalten, sondern das Timing des Rechners.
+        """
         base, _, _ = server
         _, payload = call(f"{base}/api/watcher/start", "POST", {"interval": 3600, "budget": 1})
         assert payload["running"] is True
         _, payload = call(f"{base}/api/watcher/stop", "POST", {})
-        assert payload["running"] is False
+        assert payload["stopping"] or not payload["running"]
 
     def test_interval_has_a_floor(self, server):
         """Ein Intervall von einer Sekunde wuerde jedes Kontingent sprengen."""

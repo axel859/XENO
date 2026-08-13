@@ -1182,7 +1182,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 627 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 634 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

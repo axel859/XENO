@@ -32,6 +32,19 @@ HORIZONS: dict[str, int] = {
 #: Ab wann ein Token als praktisch wertlos gilt (Anteil vom Ausgangskurs).
 DEAD_THRESHOLD = 0.1
 
+#: Ab hier ist das Vielfache kein Ergebnis mehr, sondern ein kaputter
+#: Bezugspunkt. Ein Vielfaches ist ``Kurs jetzt / Kurs beim ersten Check``,
+#: und bei einem Token, der Sekunden alt ist, liefert DexScreener manchmal
+#: einen Ausgangskurs nahe null. Dann steht in der Auswertung "66702.1x" -
+#: eine Zahl, die in der Spalte BESTE alles daneben unlesbar macht und die
+#: Trefferquote nach oben faelscht.
+#:
+#: Ein echtes Tausendfaches in sechs Stunden ist bei Memecoins moeglich,
+#: aber so selten, dass ein hoeherer Wert weit eher auf den Bezugspunkt
+#: deutet als auf den Kurs. Solche Messungen werden aussortiert und
+#: **gezaehlt** - verschwiegen wird nichts.
+IMPLAUSIBLE_MULTIPLE = 1_000.0
+
 #: Wie weit eine Messung hinter ihrem Zeitpunkt liegen darf.
 #:
 #: Wichtig, wenn der Bot nicht durchgehend laeuft: war er zwoelf Stunden aus,
@@ -175,11 +188,16 @@ def summarise(states: list[TokenState]) -> dict[str, dict[str, dict]]:
         for label in HORIZONS:
             # None steht fuer "Zeitpunkt verpasst, weil der Bot aus war" -
             # das ist keine Null, sondern gar keine Messung.
-            values = [
+            measured = [
                 e.outcomes[label]
                 for e in entries
                 if e.outcomes.get(label) is not None
             ]
+            # Kaputte Bezugspunkte fliegen aus *allen* Kennzahlen, nicht nur
+            # aus der Spalte BESTE: sie wuerden sonst auch als Treffer
+            # gezaehlt und die Quote nach oben faelschen.
+            values = [v for v in measured if v < IMPLAUSIBLE_MULTIPLE]
+            broken = len(measured) - len(values)
             if not values:
                 continue
             per_horizon[label] = {
@@ -188,6 +206,7 @@ def summarise(states: list[TokenState]) -> dict[str, dict[str, dict]]:
                 "best": max(values),
                 "dead_pct": 100.0 * sum(1 for v in values if is_dead(v)) / len(values),
                 "winners_pct": 100.0 * sum(1 for v in values if v >= 2.0) / len(values),
+                "broken": broken,
             }
         if per_horizon:
             summary[verdict] = per_horizon
