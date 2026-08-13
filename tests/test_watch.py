@@ -688,6 +688,20 @@ class TestAusblenden:
         state.hide_all()
         assert len(WakeWatcher().candidates(state, time.time())) == 5
 
+    def test_tokens_found_later_are_still_shown(self, tmp_path):
+        """Die Frage, die sich beim Leeren sofort stellt: bleibt die Liste
+        dann fuer immer leer?
+
+        Nein - ``hide_all`` fasst nur an, was in dem Moment existiert. Jeder
+        danach gefundene Token startet sichtbar. Waere es anders, waere der
+        Knopf eine Falle: einmal gedrueckt, und der Bot arbeitet fuer
+        niemanden mehr sichtbar.
+        """
+        state = self.filled(tmp_path)
+        state.hide_all()
+        state.record(make_report(mint="neu" + "9" * 37))
+        assert not state.get("neu" + "9" * 37).hidden
+
     def test_the_history_is_untouched(self, tmp_path):
         state = self.filled(tmp_path)
         state.hide_all()

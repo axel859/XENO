@@ -604,7 +604,8 @@ stehen die Urteilsgruppen mit ihren Anzahlen; geladen werden 40 Zeilen auf
 einmal.
 
 **Ausblenden statt Löschen.** Wer neu anfangen will, nimmt die Liste mit einem
-Knopf leer — die Token laufen aber **im Hintergrund weiter**: sie werden erneut
+Knopf leer — neu gefundene Token erscheinen danach weiterhin ganz normal,
+ausgeblendet wird nur, was in dem Moment schon dasteht — die Token laufen aber **im Hintergrund weiter**: sie werden erneut
 geprüft, ihr Kurs wird nachverfolgt, und wenn einer aufwacht, meldet er sich.
 Nur die Anzeige ist aufgeräumt.
 
@@ -1236,7 +1237,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 667 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 668 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

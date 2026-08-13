@@ -896,8 +896,11 @@ function renderList(box, all) {
    lässt, ob die Urteile etwas taugen. */
 function hideAll() {
   if (!confirm('Alle Token aus der Liste nehmen?\n\n'
-             + 'Sie laufen im Hintergrund weiter: werden geprüft, nachverfolgt '
-             + 'und melden sich, wenn sie aufwachen. Die Watchlist bleibt.\n\n'
+             + 'Neu gefundene Token erscheinen weiterhin ganz normal — '
+             + 'ausgeblendet wird nur, was jetzt schon dasteht.\n\n'
+             + 'Die Ausgeblendeten laufen im Hintergrund weiter: werden geprüft, '
+             + 'nachverfolgt und melden sich, wenn sie aufwachen. Die Watchlist '
+             + 'bleibt.\n\n'
              + 'Zurückholen geht jederzeit über den Filter „Ausgeblendet".')) return;
   api('/api/hide', {method: 'POST', body: JSON.stringify({all: true})})
     .then(() => { shown = PAGE; refresh(); })
