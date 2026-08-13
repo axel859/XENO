@@ -522,6 +522,10 @@ function refresh() {
 // mit OK die eigentliche Frage beantwortet: bringen die strengen
 // Bedingungen etwas, oder sorgen sie nur für weniger Trades?
 const GROUP_ORDER = ['CALL', 'OK', 'CAUTION', 'RISKY', 'AVOID', 'UNKNOWN', 'CONTROL'];
+// Ein Name je Gruppe, überall derselbe. Intern heißt die Vergleichsgruppe
+// CONTROL – das ist der gespeicherte Wert und bleibt so; angezeigt wird
+// aber nur „Abgelehnt", sonst stehen für dieselbe Sache zwei Wörter auf
+// einer Seite.
 const GROUP_LABEL = {
   CALL: 'Calls', OK: 'OK', CAUTION: 'Mittel', RISKY: 'Riskant',
   AVOID: 'Vermeiden', UNKNOWN: 'Unbekannt', CONTROL: 'Abgelehnt',
@@ -559,7 +563,10 @@ function renderTrades(d) {
     </div>
 
     <div class="note">Simuliert: 100 $ je Token, raus bei 2x, bei 40 % Verlust
-    oder nach 24 Stunden. Kein echtes Geld.</div>
+    oder nach 24 Stunden. Kein echtes Geld.<br>
+    <b>Abgelehnt</b> sind Token, die schon der Vorfilter aussortiert hat — drei
+    zufällige je Durchlauf, nur zum Vergleich mitgemessen. Sie sind der
+    Maßstab: laufen sie besser als die geprüften, filtert der Bot falsch.</div>
 
     <div class="wrap-x"><table class="trades">
       <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
@@ -579,7 +586,7 @@ function renderTrades(d) {
     <h3 style="font-size:13px;color:var(--muted);margin:18px 0 8px;font-weight:500">Positionen</h3>
     ${(d.positions || []).slice(0, 60).map(p => `<div class="card">
       <div class="card-head">
-        <span class="badge ${esc(p.group)}">${esc(p.group)}</span>
+        <span class="badge ${esc(p.group)}">${esc(GROUP_LABEL[p.group] || p.group)}</span>
         <span class="sym">${esc(p.symbol || p.mint.slice(0, 10))}${p.is_call ? ' 🎯' : ''}</span>
         <span class="score">${p.open ? 'offen' : esc(p.exit_reason)}</span>
       </div>
