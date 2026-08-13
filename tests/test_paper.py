@@ -36,6 +36,14 @@ def call(mint: str = MINT, price: float = 1.0, strength: int = 3) -> Call:
     )
 
 
+def buy(book, mint: str = MINT, price: float = 1.0, **kwargs):
+    """Kurzform fuer die Tests - ein Einstieg mit sinnvollen Vorgaben."""
+    kwargs.setdefault("symbol", "TEST")
+    kwargs.setdefault("group", "OK")
+    kwargs.setdefault("now", NOW)
+    return book.enter(mint, price, **kwargs)
+
+
 @pytest.fixture
 def book(tmp_path):
     return PaperBook(tmp_path / "paper.json")
@@ -43,29 +51,29 @@ def book(tmp_path):
 
 class TestEntry:
     def test_a_call_opens_a_position(self, book):
-        position = book.enter(call(), now=NOW)
+        position = buy(book)
         assert position is not None
         assert position.entry_price == 1.0
         assert book.holds(MINT)
 
     def test_the_reasons_are_kept(self, book):
-        position = book.enter(call(strength=3), now=NOW)
+        position = buy(book, strength=3, reasons=['a','b','c'])
         assert len(position.reasons) == 3
 
     def test_no_second_position_in_the_same_token(self, book):
         """Sonst zaehlte derselbe Kursverlauf doppelt und die Bilanz waere
         verfaelscht."""
-        book.enter(call(), now=NOW)
-        assert book.enter(call(), now=NOW + 60) is None
+        buy(book)
+        assert buy(book, now=NOW + 60) is None
         assert len(book.open_positions) == 1
 
     def test_without_a_price_there_is_no_entry(self, book):
-        assert book.enter(call(price=0), now=NOW) is None
+        assert buy(book, price=0) is None
 
 
 class TestExitRules:
     def _opened(self, book):
-        return book.enter(call(price=1.0), now=NOW)
+        return buy(book)
 
     def test_target_reached(self, book):
         self._opened(book)
@@ -101,16 +109,25 @@ class TestExitRules:
         self._opened(book)
         assert book.update({}, now=NOW + 60) == []
 
+    def test_a_zero_price_does_not_leave_the_position_hanging(self, book):
+        """Beim Aufsetzen der Trades-Seite aufgefallen: ein Kurs von exakt
+        null liess die Position ewig offen - die Ausstiegsregel kann mit dem
+        Wert nichts anfangen, und selbst das Zeitlimit griff nicht."""
+        self._opened(book)
+        assert book.update({MINT: 0.0}, now=NOW + 60) == []
+        closed = book.update({MINT: 0.0}, now=NOW + MAX_HOLD_SECONDS + 1)
+        assert closed and closed[0].exit_reason == "markt_weg"
+
 
 class TestPeak:
     def test_the_high_water_mark_is_tracked(self, book):
-        book.enter(call(price=1.0), now=NOW)
+        buy(book)
         book.update({MINT: 1.8}, now=NOW + 60)
         book.update({MINT: 1.2}, now=NOW + 120)
         assert book.open_positions[0].peak_price == 1.8
 
     def test_the_peak_shows_what_a_better_exit_would_have_given(self, book):
-        book.enter(call(price=1.0), now=NOW)
+        buy(book)
         book.update({MINT: 1.9}, now=NOW + 60)
         position = book.open_positions[0]
         assert position.multiple == pytest.approx(1.9)
@@ -118,18 +135,18 @@ class TestPeak:
 
 class TestResults:
     def test_a_win_is_counted_in_dollars(self, book):
-        book.enter(call(price=1.0), now=NOW)
+        buy(book)
         book.update({MINT: 2.0}, now=NOW + 60)
         assert book.closed_positions[0].result_usd() == pytest.approx(100.0)
 
     def test_a_loss_is_counted_in_dollars(self, book):
-        book.enter(call(price=1.0), now=NOW)
+        buy(book)
         book.update({MINT: 0.5}, now=NOW + 60)
         assert book.closed_positions[0].result_usd() == pytest.approx(-50.0)
 
     def test_the_summary_adds_up(self, book):
-        book.enter(call(mint="a", price=1.0), now=NOW)
-        book.enter(call(mint="b", price=1.0), now=NOW)
+        buy(book, "a")
+        buy(book, "b")
         book.update({"a": 2.0, "b": 0.5}, now=NOW + 60)
 
         result = book.summary()
@@ -145,7 +162,7 @@ class TestResults:
         assert result["median_multiple"] is None
 
     def test_open_positions_are_shown_unrealised(self, book):
-        book.enter(call(price=1.0), now=NOW)
+        buy(book)
         result = book.summary({MINT: 1.5})
         assert result["open"] == 1
         assert result["unrealised_usd"] == pytest.approx(50.0)
@@ -156,8 +173,8 @@ class TestTrackRecord:
         assert "noch keine" in book.hit_rate_text()
 
     def test_the_number_that_belongs_on_every_call(self, book):
-        book.enter(call(mint="a", price=1.0), now=NOW)
-        book.enter(call(mint="b", price=1.0), now=NOW)
+        buy(book, "a")
+        buy(book, "b")
         book.update({"a": 2.0, "b": 0.5}, now=NOW + 60)
         assert "von 2" in book.hit_rate_text()
         assert "1 im Plus" in book.hit_rate_text()
@@ -167,7 +184,7 @@ class TestPersistence:
     def test_positions_survive_a_restart(self, tmp_path):
         path = tmp_path / "paper.json"
         first = PaperBook(path)
-        first.enter(call(price=1.0), now=NOW)
+        buy(first)
         first.save(force=True)
 
         second = PaperBook(path)
@@ -181,13 +198,96 @@ class TestPersistence:
 
     def test_an_unwritable_place_does_not_raise(self, tmp_path, monkeypatch):
         book = PaperBook(tmp_path / "paper.json")
-        book.enter(call(price=1.0), now=NOW)
+        buy(book)
 
         def boom(*args, **kwargs):
             raise OSError("Platte voll")
 
         monkeypatch.setattr("tempfile.mkstemp", boom)
         book.save(force=True)
+
+
+class TestGroups:
+    """Die Auswertung, um die es eigentlich geht.
+
+    Simuliert wird jedes Urteil, nicht nur die Calls. Sonst gaebe es zwar
+    eine Zahl fuer die Vorschlaege, aber keine Vergleichszahl - und ob die
+    strengen Bedingungen ueberhaupt etwas bringen, bliebe offen.
+    """
+
+    def _mixed(self, book):
+        buy(book, "gut", group="OK", is_call=True)
+        buy(book, "auch-gut", group="OK")
+        buy(book, "mittel", group="CAUTION")
+        buy(book, "meiden", group="AVOID")
+        book.update(
+            {"gut": 2.0, "auch-gut": 0.5, "mittel": 1.0, "meiden": 3.0},
+            now=NOW + MAX_HOLD_SECONDS + 1,
+        )
+
+    def test_each_verdict_gets_its_own_line(self, book):
+        self._mixed(book)
+        groups = book.by_group()
+        assert set(groups) >= {"OK", "CAUTION", "AVOID", "CALL"}
+
+    def test_calls_count_inside_their_verdict_too(self, book):
+        """Ein Call ist eine Teilmenge von OK, keine eigene Kategorie - erst
+        der Vergleich beider Zeilen zeigt, ob die Bedingungen etwas bringen."""
+        self._mixed(book)
+        groups = book.by_group()
+        assert groups["OK"]["closed"] == 2
+        assert groups["CALL"]["closed"] == 1
+
+    def test_the_comparison_that_started_all_this(self, book):
+        """Genau die Frage: liefen die abgelehnten besser als die guten?"""
+        self._mixed(book)
+        groups = book.by_group()
+        assert groups["AVOID"]["result_usd"] > groups["OK"]["result_usd"]
+
+    def test_turnover_counts_every_position(self, book):
+        self._mixed(book)
+        assert book.summary()["turnover_usd"] == pytest.approx(400.0)
+
+    def test_an_empty_book_has_no_groups(self, book):
+        assert book.by_group() == {}
+
+
+class TestMarketCap:
+    def test_the_entry_valuation_is_kept(self, book):
+        position = buy(book, mcap=50_000)
+        assert position.entry_mcap_usd == 50_000
+
+    def test_the_current_valuation_follows_the_price(self, book):
+        """Hochgerechnet statt abgefragt: die Supply liegt fest, also bewegt
+        sich die Bewertung genau wie der Kurs - das erspart eine zweite
+        Abfrage je Position."""
+        position = buy(book, price=1.0, mcap=50_000)
+        assert position.mcap_at(2.0) == pytest.approx(100_000)
+        assert position.mcap_at(0.5) == pytest.approx(25_000)
+
+    def test_the_exit_valuation_is_derived(self, book):
+        buy(book, price=1.0, mcap=50_000)
+        book.update({MINT: 2.0}, now=NOW + 60)
+        assert book.closed_positions[0].exit_mcap_usd == pytest.approx(100_000)
+
+    def test_without_an_entry_valuation_nothing_is_invented(self, book):
+        position = buy(book, mcap=None)
+        assert position.mcap_at(2.0) is None
+
+    def test_the_last_price_is_remembered(self, book):
+        """Fuer die Vergleichsgruppe gibt es nie einen Bericht, aus dem sich
+        ein aktueller Kurs ablesen liesse - ohne dieses Gedaechtnis haetten
+        ihre Positionen in der Oberflaeche nie einen Wert."""
+        buy(book, price=1.0, mcap=50_000, group="CONTROL")
+        book.update({MINT: 1.4}, now=NOW + 60)
+        position = book.open_positions[0]
+        assert position.last_price == pytest.approx(1.4)
+        assert position.mcap_at(position.last_price) == pytest.approx(70_000)
+
+    def test_the_unrealised_result_uses_it(self, book):
+        buy(book, price=1.0, group="CONTROL")
+        book.update({MINT: 1.5}, now=NOW + 60)
+        assert book.summary()["unrealised_usd"] == pytest.approx(50.0)
 
 
 def test_decide_needs_a_sane_price():

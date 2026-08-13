@@ -39,6 +39,7 @@ def watcher(state: WatchState) -> Watcher:
     instance = Watcher.__new__(Watcher)
     instance.state = state
     instance.settings = Settings()
+    instance.book = None
     return instance
 
 
@@ -151,6 +152,21 @@ class TestMeasurement:
 
         pending, _ = due_measurements(state, NOW + 16 * 60)
         assert MINT in pending["15m"]
+
+    def test_rejected_tokens_are_paper_traded_too(self, tmp_path):
+        """Nur so steht ihr Ergebnis in derselben Waehrung wie das der
+        empfohlenen - ein Median laesst sich nicht mit einer
+        Gewinnrechnung vergleichen."""
+        from xeno.paper import PaperBook
+
+        state = WatchState(tmp_path / "s.json")
+        instance = watcher(state)
+        instance.book = PaperBook(tmp_path / "paper.json")
+
+        instance._sample_control([screen_result("abgelehnt", passed=False)], NOW)
+
+        assert instance.book.holds("abgelehnt")
+        assert instance.book.positions[0].group == "CONTROL"
 
     def test_they_appear_as_their_own_group(self, tmp_path):
         from xeno.follow import summarise

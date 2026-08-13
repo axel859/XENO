@@ -61,6 +61,8 @@ class AppState:
         self.checked_total = 0
         self.last_cycle: dict[str, Any] | None = None
         self.started_at = time.time()
+        #: Papierbuch des Watchers. Die Oberflaeche liest nur daraus.
+        self.book: Any | None = None
 
     def log(self, message: str) -> None:
         with self.lock:
@@ -297,6 +299,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/log":
             with self.app.lock:
                 return self._json({"lines": list(self.app.log_lines)})
+        if path == "/api/trades":
+            return self._json(self._trades())
         if path == "/api/config":
             return self._json(
                 {
@@ -429,6 +433,59 @@ class Handler(BaseHTTPRequestHandler):
         entries.sort(key=lambda e: (not e["watchlisted"], -e["score"]))
         return entries
 
+    def _trades(self) -> dict[str, Any]:
+        """Der Papierhandel als Ganzes - Gesamtbilanz, Gruppen, Positionen.
+
+        Die aktuellen Kurse stammen aus den Berichten, die ohnehin im
+        Speicher liegen. Eine eigene Abfrage waere Verschwendung: der
+        Watcher holt sie fuer die offenen Positionen sowieso.
+        """
+        book = self.app.book
+        if book is None:
+            return {"available": False, "positions": [], "groups": {}}
+
+        with self.app.lock:
+            reports = dict(self.app.reports)
+        prices = {
+            mint: (report.get("market") or {}).get("price_usd")
+            for mint, report in reports.items()
+        }
+        prices = {m: p for m, p in prices.items() if p}
+
+        positions = []
+        for position in sorted(book.positions, key=lambda p: p.opened_at, reverse=True):
+            # Der zuletzt gesehene Kurs als Rueckfall: fuer die Token der
+            # Vergleichsgruppe gibt es nie einen Bericht, aus dem sich ein
+            # frischerer ablesen liesse.
+            price = (
+                position.exit_price
+                if not position.open
+                else (prices.get(position.mint) or position.last_price)
+            )
+            positions.append(
+                {
+                    "mint": position.mint,
+                    "symbol": position.symbol,
+                    "group": position.group,
+                    "is_call": position.is_call,
+                    "open": position.open,
+                    "opened_at": position.opened_at,
+                    "closed_at": position.closed_at,
+                    "entry_mcap_usd": position.entry_mcap_usd,
+                    "current_mcap_usd": position.mcap_at(price),
+                    "result_usd": position.result_usd(price),
+                    "exit_reason": position.exit_reason,
+                    "reasons": list(position.reasons),
+                }
+            )
+
+        return {
+            "available": True,
+            "total": book.summary(prices),
+            "groups": book.by_group(prices),
+            "positions": positions[:200],
+        }
+
     def _token_detail(self, mint: str) -> dict[str, Any]:
         with self.app.lock:
             report = self.app.reports.get(mint)
@@ -515,6 +572,8 @@ def build_server(
         log=app.log,
         live=live,
     )
+    # Die Oberflaeche liest aus demselben Papierbuch, das der Watcher fuehrt.
+    app.book = watcher.book
     watcher_thread = WatcherThread(app, watcher)
 
     # Ohne Token waere die API fuer jedes Geraet im Netz offen, sobald der

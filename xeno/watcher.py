@@ -292,8 +292,24 @@ class Watcher:
         taken = 0
         for result in random.sample(rejected, min(CONTROL_SAMPLE, len(rejected))):
             reason = result.reasons[0] if result.reasons else ""
-            if self.state.record_control(result.candidate, reason, now) is not None:
-                taken += 1
+            if self.state.record_control(result.candidate, reason, now) is None:
+                continue
+            taken += 1
+            # Auch die Abgelehnten laufen als Papierposition mit. Nur so
+            # steht ihr Ergebnis in derselben Waehrung wie das der
+            # empfohlenen - ein Median laesst sich nicht mit einer
+            # Gewinnrechnung vergleichen.
+            if self.book is not None:
+                candidate = result.candidate
+                self.book.enter(
+                    candidate.mint,
+                    candidate.price_usd,
+                    symbol=candidate.symbol,
+                    group="CONTROL",
+                    mcap=candidate.mcap_usd,
+                    reasons=[reason] if reason else [],
+                    now=now,
+                )
         return taken
 
     def _collect_live(self, stats: CycleStats) -> list[TokenCandidate]:
@@ -419,12 +435,14 @@ class Watcher:
             # gegen den vorherigen Stand.
             self.state.record(report, now=time.time())
 
-            # Call: der einzige Punkt, an dem XENO von sich aus etwas
-            # vorschlaegt. Alles andere sagt nur, dass nichts dagegen
-            # spricht - das ist etwas anderes.
+            # Papierhandel. Simuliert wird **jedes** Urteil, nicht nur die
+            # Calls - sonst gaebe es zwar eine Zahl fuer die Vorschlaege,
+            # aber keine Vergleichszahl, und ob die strengen Bedingungen
+            # ueberhaupt etwas bringen, bliebe offen.
             if self.book is not None:
                 call = worth_calling(report)
-                if call is not None and self.book.enter(call, now=time.time()):
+                self.book.enter_report(report, call, now=time.time())
+                if call is not None:
                     stats.calls += 1
                     self.notifier.send(self._call_alert(report, call))
 

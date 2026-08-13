@@ -757,18 +757,43 @@ Menschen an dieser Stelle genau einen Vorteil: **es wird nicht gierig.**
 Ein Token, dessen Markt verschwindet, wird als Totalverlust verbucht, nicht
 als fehlende Messung. Wer das anders macht, rechnet sich die Bilanz schön.
 
-`xeno stats` zeigt am Ende, was herausgekommen wäre:
+### Simuliert wird jedes Urteil, nicht nur die Calls
+
+Sonst gäbe es am Ende zwar eine Zahl für die Vorschläge, aber keine
+Vergleichszahl — und ob die strengen Bedingungen überhaupt etwas bringen,
+bliebe offen. Jeder geprüfte Token bekommt deshalb eine Position, getaggt mit
+seinem Urteil beim ersten Hinsehen. Die Calls stehen zusätzlich als eigene
+Zeile; sie sind eine Teilmenge von OK, keine eigene Kategorie.
+
+Im Dashboard beantwortet der Reiter **Trades** damit genau die Frage, mit der
+dieses Projekt seine erste Enttäuschung erlebt hat:
 
 ```
-Papierhandel - was mit den Calls herausgekommen waere
-  Abgeschlossen    14  (offen: 3)
-  Ergebnis         -180.00 USD auf 1400 USD Einsatz
-  Davon im Plus    3 (21%)
-  Ausstiege        verlustgrenze: 9, zeitlimit: 3, ziel: 2
+GRUPPE      TRADES  IM PLUS  MEDIAN   ERGEBNIS
+Calls        1 +1     100%    2.40x   +$140.00
+OK           3 +1      67%    1.10x   +$105.00
+Mittel       2         50%    1.47x    +$95.00
+Vermeiden    2         50%    1.60x   +$120.00
+Abgelehnt    2 +3      50%    0.95x    −$10.00
 ```
 
-Und diese Zahl steht ab sofort **neben jedem Call**. Ohne sie liest sich ein
-Vorschlag wie eine Gewissheit, und genau das ist er nicht.
+Steht am Ende **Vermeiden** oder **Abgelehnt** oben, filtert XENO in die
+falsche Richtung — und keine noch so gute Einzelprüfung ändert daran etwas.
+
+Jede Position zeigt außerdem, bei welcher Bewertung eingestiegen wurde, wo
+sie jetzt steht und was dabei herauskommt:
+
+```
+OK   BONK 🎯                                    ziel
+$45.0k  →  $108.0k                    +$140.00 · ziel
+```
+
+Die aktuelle Bewertung wird aus dem Kurs hochgerechnet statt abgefragt — die
+Supply eines Memecoins liegt fest, also bewegt sie sich mit. Das erspart eine
+zweite Abfrage je Position.
+
+Die Trefferbilanz steht ab sofort **neben jedem Call**. Ohne sie liest sich
+ein Vorschlag wie eine Gewissheit, und genau das ist er nicht.
 
 ## Die Vergleichsgruppe — Fehlalarme sichtbar machen
 

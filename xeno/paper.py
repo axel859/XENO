@@ -54,16 +54,51 @@ class Position:
     strength: int = 0
     reasons: list[str] = field(default_factory=list)
 
+    #: Urteil beim Einstieg - OK, CAUTION, RISKY, AVOID, UNKNOWN oder
+    #: CONTROL fuer die im Vorfilter abgelehnten. Bewusst festgehalten und
+    #: nie nachtraeglich geaendert: gemessen wird, was XENO beim ersten
+    #: Hinsehen gesagt hat, nicht was er spaeter besser wusste.
+    group: str = "UNKNOWN"
+    #: Ob dieser Einstieg zusaetzlich die Call-Bedingungen erfuellte. Ein
+    #: Call ist eine Teilmenge von OK, keine eigene Kategorie - so laesst
+    #: sich beides vergleichen, ohne die Positionen doppelt zu fuehren.
+    is_call: bool = False
+
+    #: Bewertung beim Einstieg. Die interessantere Zahl als der Kurs, weil
+    #: sie sich zwischen Token vergleichen laesst.
+    entry_mcap_usd: float | None = None
+
     closed_at: float = 0.0
     exit_price: float = 0.0
     exit_reason: str = ""
     #: Hoechster Kurs seit Einstieg - zeigt, was ein besserer Ausstieg
     #: gebracht haette.
     peak_price: float = 0.0
+    #: Zuletzt gesehener Kurs. Ohne ihn haetten die Positionen der
+    #: Vergleichsgruppe nie einen aktuellen Wert: sie werden nie tief
+    #: geprueft, also liegt zu ihnen auch nie ein Bericht vor, aus dem sich
+    #: einer ablesen liesse.
+    last_price: float = 0.0
+    last_price_at: float = 0.0
 
     @property
     def open(self) -> bool:
         return not self.closed_at
+
+    def mcap_at(self, price: float | None) -> float | None:
+        """Bewertung bei einem gegebenen Kurs.
+
+        Hochgerechnet statt abgefragt: die Supply eines Memecoins liegt fest,
+        also bewegt sich die Bewertung genau wie der Kurs. Das erspart eine
+        zweite Abfrage je Position - und die Kurse holen wir ohnehin.
+        """
+        if not self.entry_mcap_usd or not self.entry_price or not price:
+            return None
+        return self.entry_mcap_usd * (price / self.entry_price)
+
+    @property
+    def exit_mcap_usd(self) -> float | None:
+        return self.mcap_at(self.exit_price) if self.closed_at else None
 
     @property
     def multiple(self) -> float | None:
@@ -178,29 +213,64 @@ class PaperBook:
     def holds(self, mint: str) -> bool:
         return any(p.mint == mint and p.open for p in self.positions)
 
-    def enter(self, call, now: float | None = None) -> Position | None:
-        """Eroeffnet eine Position auf einen Call.
+    def enter(
+        self,
+        mint: str,
+        price: float | None,
+        *,
+        symbol: str = "",
+        group: str = "UNKNOWN",
+        is_call: bool = False,
+        mcap: float | None = None,
+        strength: int = 0,
+        reasons: list[str] | None = None,
+        now: float | None = None,
+    ) -> Position | None:
+        """Eroeffnet eine Position.
 
-        Kein Nachkaufen: ein zweiter Call auf denselben Token waehrend die
+        Simuliert wird **jedes** geprueft Urteil, nicht nur die Calls. Sonst
+        gaebe es am Ende zwar eine Zahl fuer die Vorschlaege, aber keine
+        Vergleichszahl - und ob die strengen Bedingungen ueberhaupt etwas
+        bringen, bliebe offen.
+
+        Kein Nachkaufen: ein zweiter Einstieg in denselben Token waehrend die
         Position laeuft wuerde die Auswertung verfaelschen, weil derselbe
         Kursverlauf doppelt zaehlte.
         """
-        if not call.price_usd or self.holds(call.mint):
+        if not price or self.holds(mint):
             return None
         now = now or time.time()
         position = Position(
-            mint=call.mint,
-            symbol=call.symbol,
+            mint=mint,
+            symbol=symbol,
             opened_at=now,
-            entry_price=call.price_usd,
-            peak_price=call.price_usd,
-            strength=call.strength,
-            reasons=list(call.reasons),
+            entry_price=price,
+            peak_price=price,
+            group=group,
+            is_call=is_call,
+            entry_mcap_usd=mcap,
+            strength=strength,
+            reasons=list(reasons or []),
         )
         with self._lock:
             self.positions.append(position)
             self._dirty = True
         return position
+
+    def enter_report(self, report, call=None, now: float | None = None) -> Position | None:
+        """Bequemer Weg aus einem fertigen Bericht."""
+        candidate = report.candidate
+        return self.enter(
+            report.mint,
+            candidate.price_usd if candidate else None,
+            symbol=report.symbol,
+            group=report.verdict.value,
+            is_call=call is not None,
+            mcap=candidate.mcap_usd if candidate else None,
+            strength=call.strength if call else 0,
+            reasons=list(call.reasons) if call else [],
+            now=now,
+        )
 
     def update(self, prices: dict[str, float], now: float | None = None) -> list[Position]:
         """Traegt neue Kurse ein und schliesst, was faellig ist.
@@ -215,8 +285,13 @@ class PaperBook:
             for position in self.positions:
                 if not position.open:
                     continue
-                price = prices.get(position.mint)
-                if price is None:
+                # Ein Kurs von null oder darunter ist keine Angabe, sondern
+                # eine kaputte. Er wird wie ein fehlender behandelt: sonst
+                # bliebe die Position ewig offen, weil die Ausstiegsregel mit
+                # einem solchen Wert nichts anfangen kann - nicht einmal das
+                # Zeitlimit griffe.
+                price = prices.get(position.mint) or None
+                if price is None or price <= 0:
                     if now - position.opened_at >= MAX_HOLD_SECONDS:
                         position.closed_at = now
                         position.exit_price = 0.0
@@ -225,6 +300,8 @@ class PaperBook:
                         self._dirty = True
                     continue
 
+                position.last_price = price
+                position.last_price_at = now
                 if price > position.peak_price:
                     position.peak_price = price
                 reason = position.decide(price, now)
@@ -240,35 +317,33 @@ class PaperBook:
 
     def summary(self, prices: dict[str, float] | None = None) -> dict:
         """Die Zahl, um die es geht: was waere herausgekommen."""
-        prices = prices or {}
         with self._lock:
-            closed = [p for p in self.positions if not p.open]
-            still_open = [p for p in self.positions if p.open]
+            positions = list(self.positions)
+        return _stats(positions, prices or {})
 
-        realised = [p.result_usd() for p in closed]
-        realised = [r for r in realised if r is not None]
+    def by_group(self, prices: dict[str, float] | None = None) -> dict[str, dict]:
+        """Bilanz je Urteilsgruppe - und die Calls als eigene Zeile.
 
-        wins = [r for r in realised if r > 0]
-        multiples = [m for m in (p.multiple for p in closed) if m is not None]
+        Das ist die Auswertung, um die es eigentlich geht: liefen die
+        empfohlenen Token besser als die abgelehnten? Wenn nicht, zeigt der
+        Filter in die falsche Richtung, und keine noch so gute
+        Einzelpruefung aendert daran etwas.
 
-        unrealised = 0.0
-        for position in still_open:
-            value = position.result_usd(prices.get(position.mint))
-            if value is not None:
-                unrealised += value
+        Die Calls stehen zusaetzlich zu ihrer Urteilsgruppe. Sie sind eine
+        Teilmenge von OK - erst der Vergleich beider Zeilen zeigt, ob die
+        strengen Bedingungen ihr Geld wert sind oder nur dafuer sorgen, dass
+        seltener gehandelt wird.
+        """
+        with self._lock:
+            positions = list(self.positions)
 
-        return {
-            "open": len(still_open),
-            "closed": len(closed),
-            "result_usd": round(sum(realised), 2),
-            "unrealised_usd": round(unrealised, 2),
-            "wins": len(wins),
-            "win_rate": round(100.0 * len(wins) / len(realised), 1) if realised else 0.0,
-            "median_multiple": round(median(multiples), 2) if multiples else None,
-            "best_multiple": round(max(multiples), 2) if multiples else None,
-            "invested_usd": round(sum(p.size_usd for p in closed), 2),
-            "reasons": _reason_counts(closed),
-        }
+        buckets: dict[str, list[Position]] = {}
+        for position in positions:
+            buckets.setdefault(position.group, []).append(position)
+            if position.is_call:
+                buckets.setdefault("CALL", []).append(position)
+
+        return {name: _stats(group, prices or {}) for name, group in buckets.items()}
 
     def hit_rate_text(self) -> str:
         """Die Bilanz in einem Satz - gehoert an jeden Call.
@@ -281,6 +356,37 @@ class PaperBook:
             return "noch keine abgeschlossenen Calls"
         wins = sum(1 for p in closed if (p.result_usd() or 0) > 0)
         return f"von {len(closed)} abgeschlossenen Calls waren {wins} im Plus"
+
+
+def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
+    """Kennzahlen einer Gruppe von Positionen."""
+    closed = [p for p in positions if not p.open]
+    still_open = [p for p in positions if p.open]
+
+    realised = [r for r in (p.result_usd() for p in closed) if r is not None]
+    wins = [r for r in realised if r > 0]
+    multiples = [m for m in (p.multiple for p in closed) if m is not None]
+
+    unrealised = 0.0
+    for position in still_open:
+        value = position.result_usd(prices.get(position.mint) or position.last_price)
+        if value is not None:
+            unrealised += value
+
+    return {
+        "open": len(still_open),
+        "closed": len(closed),
+        "result_usd": round(sum(realised), 2),
+        "unrealised_usd": round(unrealised, 2),
+        "wins": len(wins),
+        "win_rate": round(100.0 * len(wins) / len(realised), 1) if realised else 0.0,
+        "median_multiple": round(median(multiples), 2) if multiples else None,
+        "best_multiple": round(max(multiples), 2) if multiples else None,
+        # Gesamteinsatz - der "Umsatz" der Simulation.
+        "invested_usd": round(sum(p.size_usd for p in closed), 2),
+        "turnover_usd": round(sum(p.size_usd for p in positions), 2),
+        "reasons": _reason_counts(closed),
+    }
 
 
 def _reason_counts(positions: list[Position]) -> dict[str, int]:

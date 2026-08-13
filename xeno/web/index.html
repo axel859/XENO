@@ -85,6 +85,10 @@
   .RISKY   { background: rgba(240,138,60,.16); color: var(--risky); }
   .AVOID   { background: rgba(239,74,90,.16); color: var(--avoid); }
   .UNKNOWN { background: rgba(107,118,131,.16); color: var(--unknown); }
+  /* Vergleichsgruppe: bewusst unauffaellig - sie ist kein Urteil, sondern
+     die Stichprobe, gegen die geprueft wird. */
+  .CONTROL { background: rgba(107,118,131,.10); color: var(--muted); }
+  .CALL    { background: rgba(74,163,239,.16); color: var(--accent); }
   .sym { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .score { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; flex: none; }
   .meta { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
@@ -108,6 +112,26 @@
   .links { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   .links a { font-size: 11.5px; color: var(--accent); text-decoration: none;
              border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+
+  /* Papierhandel: Einstieg → jetzt, und was dabei herauskommt. */
+  .pos { display: flex; align-items: baseline; gap: 8px; margin-top: 8px;
+         padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; }
+  .pos .arrow { color: var(--muted); }
+  .pos .pl { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .plus { color: var(--ok); }
+  .minus { color: var(--avoid); }
+
+  table.trades { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.trades th { text-align: right; color: var(--muted); font-weight: 500;
+                    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+                    padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  table.trades th:first-child, table.trades td:first-child { text-align: left; }
+  table.trades td { text-align: right; padding: 7px 4px; border-bottom: 1px solid var(--line-soft, #1b2027);
+                    font-variant-numeric: tabular-nums; }
+  table.trades tr.best td { background: rgba(53,208,127,.07); }
+  .grp { font-weight: 600; }
+  .grp.CALL { color: var(--accent); }
+  .wrap-x { overflow-x: auto; }
   .finding { font-size: 12.5px; margin-top: 5px; padding-left: 15px; position: relative; color: #c3cbd6; }
   .finding::before { content: ""; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
   .finding.critical::before, .finding.high::before { background: var(--avoid); }
@@ -165,6 +189,7 @@
     <button class="active" data-tab="tokens" onclick="showTab('tokens')">Token</button>
     <button data-tab="watchlist" onclick="showTab('watchlist')">Watchlist</button>
     <button data-tab="alerts" onclick="showTab('alerts')">Meldungen</button>
+    <button data-tab="trades" onclick="showTab('trades')">Trades</button>
     <button data-tab="log" onclick="showTab('log')">Log</button>
   </nav>
 
@@ -185,6 +210,10 @@
     <div id="alerts"><div class="empty">lade …</div></div>
   </div>
 
+  <div id="tab-trades" class="tab" hidden>
+    <div id="trades"><div class="empty">lade …</div></div>
+  </div>
+
   <div id="tab-log" class="tab" hidden>
     <pre class="log" id="log">lade …</pre>
   </div>
@@ -193,6 +222,8 @@
 <script>
 const token = new URLSearchParams(location.search).get('token') || '';
 let tab = 'tokens';
+// Papierpositionen nach Mint, damit die Tokenkarten sie mitzeigen können.
+let positions = {};
 let busy = false;
 
 /* ---- Hinweise bei neuen Meldungen -------------------------------------
@@ -357,6 +388,25 @@ function linkRow(m) {
   return out.length ? `<div class="links">${out.join('')}</div>` : '';
 }
 
+function usd(v) {
+  if (v == null) return '–';
+  return (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2);
+}
+
+// Einstieg → jetzt. Ohne den Einstiegswert daneben sagt der aktuelle
+// Marktwert nichts darüber, ob die Position läuft.
+function positionRow(p) {
+  if (!p) return '';
+  const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
+  const status = p.open ? '' : ` · ${esc(p.exit_reason)}`;
+  return `<div class="pos">
+    <span>${money(p.entry_mcap_usd)}</span>
+    <span class="arrow">→</span>
+    <span>${money(p.current_mcap_usd)}</span>
+    <span class="pl ${cls}">${usd(p.result_usd)}${status}</span>
+  </div>`;
+}
+
 function tokenCard(t) {
   const m = t.market || {};
   const h = t.holders || {};
@@ -371,6 +421,7 @@ function tokenCard(t) {
     </div>
     ${figures(m, h)}
     <div class="asof">Zahlen von der Prüfung vor ${esc(ago(t.last_checked))}</div>
+    ${positionRow(positions[t.mint])}
     ${linkRow(m)}
     ${findings}
     <div class="mint">${esc(t.mint)}</div>
@@ -452,11 +503,90 @@ function refresh() {
     }
   }).catch(() => {});
 
+  // Immer holen, nicht nur im Trades-Tab: die Tokenkarten zeigen die
+  // offenen Positionen mit an.
+  api('/api/trades').then(d => {
+    positions = {};
+    (d.positions || []).forEach(p => { if (!positions[p.mint]) positions[p.mint] = p; });
+    if (tab === 'trades') renderTrades(d);
+  }).catch(() => {});
+
   if (tab === 'log') {
     api('/api/log').then(d => {
       document.getElementById('log').textContent = d.lines.slice().reverse().join('\n') || 'leer';
     }).catch(() => {});
   }
+}
+
+// Reihenfolge von gut nach schlecht. CALL steht vorn, weil der Vergleich
+// mit OK die eigentliche Frage beantwortet: bringen die strengen
+// Bedingungen etwas, oder sorgen sie nur für weniger Trades?
+const GROUP_ORDER = ['CALL', 'OK', 'CAUTION', 'RISKY', 'AVOID', 'UNKNOWN', 'CONTROL'];
+const GROUP_LABEL = {
+  CALL: 'Calls', OK: 'OK', CAUTION: 'Mittel', RISKY: 'Riskant',
+  AVOID: 'Vermeiden', UNKNOWN: 'Unbekannt', CONTROL: 'Abgelehnt',
+};
+
+function renderTrades(d) {
+  const box = document.getElementById('trades');
+  if (!d.available) {
+    box.innerHTML = '<div class="empty">Papierhandel nicht aktiv.</div>';
+    return;
+  }
+  const t = d.total || {};
+  if (!t.closed && !t.open) {
+    box.innerHTML = '<div class="empty">Noch keine Positionen. '
+      + 'Der Bot simuliert jeden geprüften Token — nach ein paar Durchläufen steht hier etwas.</div>';
+    return;
+  }
+
+  const groups = d.groups || {};
+  const rows = GROUP_ORDER.filter(g => groups[g]).map(g => [g, groups[g]]);
+  // Beste Gruppe hervorheben – das ist die Zeile, wegen der es diese Seite gibt.
+  const closedRows = rows.filter(([, s]) => s.closed > 0);
+  const best = closedRows.length
+    ? closedRows.reduce((a, b) => (b[1].result_usd > a[1].result_usd ? b : a))[0]
+    : null;
+
+  const plCls = v => v == null ? '' : (v >= 0 ? 'plus' : 'minus');
+
+  box.innerHTML = `
+    <div class="stats">
+      <div class="stat"><b>${t.closed}</b><span>Abgeschl.</span></div>
+      <div class="stat"><b>${t.open}</b><span>Offen</span></div>
+      <div class="stat"><b>$${(t.turnover_usd || 0).toFixed(0)}</b><span>Umsatz</span></div>
+      <div class="stat"><b class="${plCls(t.result_usd)}">${usd(t.result_usd)}</b><span>Ergebnis</span></div>
+    </div>
+
+    <div class="note">Simuliert: 100 $ je Token, raus bei 2x, bei 40 % Verlust
+    oder nach 24 Stunden. Kein echtes Geld.</div>
+
+    <div class="wrap-x"><table class="trades">
+      <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
+      ${rows.map(([g, s]) => `<tr class="${g === best ? 'best' : ''}">
+        <td class="grp ${g}">${GROUP_LABEL[g] || g}</td>
+        <td>${s.closed}${s.open ? ' <span class="arrow">+' + s.open + '</span>' : ''}</td>
+        <td>${s.closed ? s.win_rate.toFixed(0) + '%' : '–'}</td>
+        <td>${s.median_multiple != null ? s.median_multiple.toFixed(2) + 'x' : '–'}</td>
+        <td class="${plCls(s.result_usd)}">${s.closed ? usd(s.result_usd) : '–'}</td>
+      </tr>`).join('')}
+    </table></div>
+
+    ${best ? `<div class="note" style="margin-top:12px">Am besten gelaufen:
+      <b>${GROUP_LABEL[best] || best}</b>. Steht dort „Vermeiden" oder „Abgelehnt“,
+      filtert der Bot in die falsche Richtung.</div>` : ''}
+
+    <h3 style="font-size:13px;color:var(--muted);margin:18px 0 8px;font-weight:500">Positionen</h3>
+    ${(d.positions || []).slice(0, 60).map(p => `<div class="card">
+      <div class="card-head">
+        <span class="badge ${esc(p.group)}">${esc(p.group)}</span>
+        <span class="sym">${esc(p.symbol || p.mint.slice(0, 10))}${p.is_call ? ' 🎯' : ''}</span>
+        <span class="score">${p.open ? 'offen' : esc(p.exit_reason)}</span>
+      </div>
+      ${positionRow(p)}
+      <div class="asof">seit ${esc(ago(p.opened_at))}</div>
+    </div>`).join('')}
+  `;
 }
 
 function toggleWatcher() {
