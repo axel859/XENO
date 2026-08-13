@@ -180,16 +180,38 @@ class SolanaRpc:
     werden genutzt, wo es geht - das spart bei begrenztem Kontingent deutlich.
     """
 
+    #: Methoden, die Anbieter teurer abrechnen als gewoehnliche Aufrufe.
+    LARGE_METHODS = frozenset(
+        {
+            "getTokenLargestAccounts",
+            "getLargestAccounts",
+            "getProgramAccounts",
+            "getSupply",
+        }
+    )
+
     def __init__(self, url: str, http: HttpClient | None = None, rate_limit: float = 2.0) -> None:
         self.url = url
         self.http = http or HttpClient(rate_limit=rate_limit)
         self._request_id = 0
+        #: Aufgerufene Methoden, nach Preisklasse getrennt. Gezaehlt werden
+        #: Methoden, nicht HTTP-Anfragen: ein Batch mit zehn Methoden wird von
+        #: den Anbietern auch zehnfach berechnet.
+        self.requests = 0
+        self.large_requests = 0
+
+    def _count(self, method: str) -> None:
+        if method in self.LARGE_METHODS:
+            self.large_requests += 1
+        else:
+            self.requests += 1
 
     def _next_id(self) -> int:
         self._request_id += 1
         return self._request_id
 
     def call(self, method: str, params: list[Any] | None = None) -> Any:
+        self._count(method)
         payload = {
             "jsonrpc": "2.0",
             "id": self._next_id(),
@@ -213,6 +235,7 @@ class SolanaRpc:
         payload = []
         ids = []
         for method, params in calls:
+            self._count(method)
             request_id = self._next_id()
             ids.append(request_id)
             payload.append(

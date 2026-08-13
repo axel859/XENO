@@ -706,6 +706,72 @@ der Discovery oder einzelnen Token.
 
 ---
 
+## Was der Bot verbraucht — und warum das eine eigene Schicht ist
+
+Ein RPC-Anbieter rechnet nicht in Anfragen ab, sondern in **Credits**. Und
+die sind nicht gleich viel wert:
+
+| | Helius | QuickNode |
+|---|---|---|
+| Gewöhnlicher Aufruf | 1 Credit | 30 Credits |
+| Große Abfrage | 1 | 120 |
+| Geparste Transaktionen | **100** | — |
+| Gratis-Kontingent / Monat | 1 Mio. | 10 Mio. |
+
+Diese Tabelle ist teuer bezahlt. XENO hat pro geprüftem Token rund 600
+Credits ausgegeben — drei gewöhnliche Aufrufe und sechs geparste
+Transaktionen. Bei acht Token je Minute war ein Monatskontingent nach drei
+Stunden leer, und bemerkt wurde es am nächsten Morgen auf der Webseite des
+Anbieters.
+
+**Der Fehler war nicht die Höhe des Verbrauchs.** Der Fehler war, dass ein
+Bot überhaupt in der Lage war, ein Monatsbudget in einer Nacht auszugeben,
+ohne dass ihn etwas daran gehindert oder auch nur davon erzählt hätte.
+
+Daraus sind zwei Dinge entstanden:
+
+### Der Zähler
+
+`xeno/credits.py` kennt die Preisliste des erkannten Anbieters, zählt
+persistent mit und verteilt das Monatsbudget auf die verbleibenden Tage. Wer
+heute spart, hat morgen mehr — das ist selbstkorrigierend und braucht keine
+Feineinstellung.
+
+Reicht das Budget nicht, wird die Abfrage **verweigert**. Das ist
+ausdrücklich keine Entwarnung: die betroffene Prüfung meldet eine
+Wissenslücke, und ein Token mit Wissenslücken kommt nie über CAUTION hinaus.
+
+`xeno config` zeigt den Stand, der Watcher meldet ihn in jeder Zeile:
+
+```
+Durchlauf 7: 132 gefunden, 4 gefiltert, 4 geprüft, 1 gemeldet, 600 Credits (32.400 heute frei)
+```
+
+### Die Stufung
+
+Mehr als die Hälfte der Prüfungen kostet nichts — RugCheck, Jupiter,
+GeckoTerminal und DexScreener sind fremde Dienste ohne Kontingent. Bisher
+hing trotzdem alles zusammen: ein Token bekam die komplette Tiefprüfung oder
+gar keine.
+
+Jetzt läuft sie nach Kosten sortiert:
+
+```
+1. kostenlos    Marktdaten, RugCheck, Kursverlauf, Honeypot-Test
+2. 1 Aufruf     Mint-Account (Mint- und Freeze-Authority)
+   ── Abbruch, wenn hier schon ein schwerwiegender Befund steht ──
+3. teurer       Holder-Verteilung über eigene Chain-Abfrage
+4. am teuersten geparste Transaktionen: Handelsmuster, Herkunft der Gelder
+```
+
+Ein Token mit lebender Mint-Authority ist erledigt, egal wie seine Halter
+verteilt sind. Ihm danach noch Abfragen hinterherzuwerfen, die das
+Hundertfache kosten, war reine Verschwendung. Gemessen an einem Testfall
+kostet ein so aussortierter Token jetzt **weniger als ein Zehntel** eines
+vollständig geprüften.
+
+---
+
 ## Wo die eigenen Daten liegen
 
 Zustand und Zugangsdaten gehören dem Benutzer, nicht dem Programm. Sie liegen

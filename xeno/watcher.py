@@ -48,12 +48,16 @@ class CycleStats:
     measured: int = 0
     #: Kandidaten, die aus dem Live-Strom kamen statt aus der Abfrage.
     live: int = 0
-    #: Helius-Anfragen in diesem Durchlauf. Das Kontingent laesst sich sonst
-    #: nur auf der Webseite des Anbieters ablesen - und faellt dort erst auf,
-    #: wenn es fast leer ist.
-    api_requests: int = 0
+    #: Verbrauchte Credits in diesem Durchlauf. Das Kontingent laesst sich
+    #: sonst nur auf der Webseite des Anbieters ablesen - und faellt dort erst
+    #: auf, wenn es leer ist.
+    credits: int = 0
     #: Wallet-Abfragen, die aus dem Gedaechtnis kamen statt aus dem Netz.
     api_saved: int = 0
+    #: Abfragen, die das Budget verweigert hat.
+    denied: int = 0
+    #: Verbleibende Credits fuer heute.
+    credits_left: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -257,10 +261,11 @@ class Watcher:
         stats = CycleStats()
         now = time.time()
 
-        helius = getattr(self.analyzer, "helius", None)
         cache = getattr(self.analyzer, "origin_cache", None)
-        requests_before = getattr(helius, "requests", 0)
+        meter = getattr(self.analyzer, "meter", None)
         hits_before = getattr(cache, "hits", 0)
+        spent_before = getattr(meter, "day_spent", 0)
+        denied_before = getattr(meter, "denied", 0)
 
         profile = self.settings.profile
         try:
@@ -335,8 +340,17 @@ class Watcher:
             follow = self.tracker.run(time.time(), on_error=stats.errors.append)
             stats.measured = follow.measured
 
-        stats.api_requests = getattr(helius, "requests", 0) - requests_before
         stats.api_saved = getattr(cache, "hits", 0) - hits_before
+        if meter is not None:
+            stats.credits = meter.day_spent - spent_before
+            stats.denied = meter.denied - denied_before
+            stats.credits_left = meter.remaining_today
+            if stats.denied:
+                stats.errors.append(
+                    f"Tagesbudget erreicht - {stats.denied} Abfragen ausgelassen. "
+                    "Die betroffenen Pruefungen melden Wissensluecken."
+                )
+            meter.save()
 
         try:
             self.state.save()
@@ -398,9 +412,10 @@ class Watcher:
                         + (f", {stats.live} live" if stats.live else "")
                         + (f", {stats.measured} nachverfolgt" if stats.measured else "")
                         + (
-                            f", {stats.api_requests} API"
-                            + (f" ({stats.api_saved} gespart)" if stats.api_saved else "")
-                            if stats.api_requests or stats.api_saved
+                            f", {stats.credits} Credits"
+                            + (f" ({stats.credits_left} heute frei)"
+                               if stats.credits_left else "")
+                            if stats.credits
                             else ""
                         )
                     )

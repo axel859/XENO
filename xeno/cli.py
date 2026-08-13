@@ -544,7 +544,25 @@ def cmd_config(args: argparse.Namespace) -> int:
 
     # Wo die eigenen Daten liegen. Steht bewusst hier und nicht nur in der
     # Anleitung: wer sie sichern oder mitnehmen will, muss sie finden koennen.
+    from .credits import CreditMeter
     from .paths import describe
+
+    meter = CreditMeter(settings.rpc_url)
+    print("\n  Kontingent")
+    if not meter.capped:
+        print(f"    Anbieter         {meter.provider} (kein Kontingent)")
+    else:
+        snapshot = meter.snapshot()
+        print(f"    Anbieter         {snapshot['provider']}")
+        print(
+            f"    Monat            {snapshot['month_spent']:,} von "
+            f"{snapshot['monthly_cap']:,} Credits".replace(",", ".")
+        )
+        print(
+            f"    Heute            {snapshot['day_spent']:,} von "
+            f"{snapshot['daily_allowance']:,} Credits".replace(",", ".")
+        )
+        print(f"    Restliche Tage   {snapshot['days_left']}")
 
     print("\n  Ablage")
     for label, value in describe().items():

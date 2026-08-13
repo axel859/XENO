@@ -67,6 +67,7 @@ class TokenAnalyzer:
         helius: Helius | None = None,
         gecko: GeckoTerminal | None = None,
         origin_cache=None,
+        meter=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         http = HttpClient(
@@ -99,6 +100,14 @@ class TokenAnalyzer:
             origin_cache = OriginCache()
         self.origin_cache = origin_cache
 
+        # Verbrauchszaehler. Ohne ihn konnte XENO ein Monatskontingent in
+        # einer Nacht ausgeben, ohne dass das irgendwo sichtbar war.
+        if meter is None:
+            from .credits import CreditMeter
+
+            meter = CreditMeter(self.settings.rpc_url)
+        self.meter = meter
+
     def collect(
         self,
         mint: str,
@@ -108,12 +117,27 @@ class TokenAnalyzer:
         read_structure: bool = True,
         check_funding: bool = True,
     ) -> TokenData:
-        """Holt alle Rohdaten. Einzelne Ausfaelle werden vermerkt, nicht geworfen."""
+        """Holt alle Rohdaten. Einzelne Ausfaelle werden vermerkt, nicht geworfen.
+
+        Die Reihenfolge ist nach Kosten sortiert, nicht nach Wichtigkeit. Der
+        Grund: mehr als die Haelfte der Pruefungen kostet nichts. RugCheck,
+        Jupiter, GeckoTerminal und DexScreener sind fremde Dienste ohne
+        Kontingent - nur die Chain-Abfragen werden abgerechnet.
+
+        Fruehen ein Token bereits an einer kostenlosen Pruefung durch, waere
+        es Verschwendung, ihm anschliessend noch teure hinterherzuwerfen. Ein
+        Token mit lebender Mint-Authority oder ohne Verkaufsroute ist erledigt,
+        egal wie seine Halter verteilt sind.
+        """
+        from .credits import ENHANCED, RPC, RPC_LARGE
+
         data = TokenData(mint=mint, candidate=candidate)
 
-        # 0. Ohne Kandidat aus der Discovery (z.B. bei "xeno check <mint>")
-        #    die Marktdaten nachladen. Nicht nur fuer die Anzeige: die
-        #    Bewertung einer fehlenden Verkaufsroute haengt am Pool-Alter.
+        # ---- Stufe 1: kostenlose Quellen -------------------------------
+
+        # Ohne Kandidat aus der Discovery (z.B. bei "xeno check <mint>") die
+        # Marktdaten nachladen. Nicht nur fuer die Anzeige: die Bewertung
+        # einer fehlenden Verkaufsroute haengt am Pool-Alter.
         if data.candidate is None:
             try:
                 pair = self.dexscreener.best_pair(mint)
@@ -122,77 +146,13 @@ class TokenAnalyzer:
             except Exception as exc:  # noqa: BLE001
                 data.errors.append(f"DexScreener fehlgeschlagen: {exc}")
 
-        # 1. Mint-Account - funktioniert auch auf dem oeffentlichen RPC.
-        try:
-            account = self.rpc.get_account_info(mint)
-            data.mint_info = parse_mint_account(mint, account)
-            if data.mint_info is None:
-                data.errors.append("Adresse ist kein gueltiger Token-Mint")
-        except Exception as exc:  # noqa: BLE001
-            data.errors.append(f"RPC getAccountInfo fehlgeschlagen: {exc}")
-
-        # 2. RugCheck - Holder, LP, Creator, Insider in einem Request.
+        # RugCheck - Holder, LP, Creator, Insider in einem Request.
         try:
             data.rugcheck = self.rugcheck.report(mint)
         except Exception as exc:  # noqa: BLE001
             data.errors.append(f"RugCheck fehlgeschlagen: {exc}")
 
-        # 3. Holder-Verteilung: RPC bevorzugt, sonst RugCheck.
-        pool_addresses = data.rc.pool_addresses
-        supply = data.mint_info.supply if data.mint_info else 0.0
-
-        if supply > 0:
-            distribution = fetch_distribution_via_rpc(
-                self.rpc, mint, supply, extra_pool_addresses=pool_addresses
-            )
-            if distribution is not None:
-                distribution.holder_count = data.rc.total_holders
-                data.distribution = distribution
-                data.holder_source = "rpc"
-
-        if data.distribution is None and data.rc.top_holders:
-            data.distribution = distribution_from_rugcheck(
-                data.rc.top_holders,
-                supply,
-                pool_addresses=pool_addresses,
-                holder_count=data.rc.total_holders,
-            )
-            data.holder_source = "rugcheck"
-
-        if data.distribution is None:
-            data.errors.append(
-                "Keine Holder-Daten (oeffentlicher RPC sperrt getTokenLargestAccounts; "
-                "HELIUS_API_KEY setzen)"
-            )
-
-        # 3b. Einzelne Handelsvorgaenge fuer die Musteranalyse. Eine
-        #     Anfrage fuer bis zu hundert Trades - ohne die liesse sich
-        #     maschineller Handel nur an zusammengefassten Zahlen ablesen.
-        if trade_pattern and self.helius.available:
-            try:
-                data.trades = self.helius.recent_trades(mint)
-            except Exception as exc:  # noqa: BLE001
-                data.errors.append(f"Transaktionen nicht abrufbar: {exc}")
-
-        # 3c. Herkunft der Gelder der groessten Halter. Der einzige Weg, ein
-        #     Buendel nachzuweisen statt zu vermuten - kostet aber eine
-        #     Anfrage je Wallet, deshalb nur die groessten und gedeckelt.
-        if check_funding and self.helius.available:
-            wallets = self._top_wallets(data)
-            if wallets:
-                try:
-                    data.origins = self.helius.origins(
-                        wallets[:FUNDING_EXAMINE],
-                        budget=FUNDING_BUDGET,
-                        cache=self.origin_cache,
-                    )
-                    self.origin_cache.save()
-                except Exception as exc:  # noqa: BLE001
-                    data.errors.append(f"Wallet-Herkunft nicht abrufbar: {exc}")
-
-        # 3d. Kursverlauf fuer die Richtungsanalyse. Eine Anfrage, und die
-        #     einzige Datenquelle, die etwas ueber die Richtung sagt - alle
-        #     anderen Pruefungen bewerten nur Sicherheit.
+        # Kursverlauf - die einzige Quelle, die etwas ueber die Richtung sagt.
         pool = data.candidate.pool_address if data.candidate else ""
         if read_structure and pool:
             try:
@@ -206,14 +166,124 @@ class TokenAnalyzer:
             except Exception as exc:  # noqa: BLE001
                 data.errors.append(f"Kursverlauf nicht abrufbar: {exc}")
 
-        # 4. Simulierter Kauf-Verkauf-Test.
+        # Simulierter Kauf-Verkauf-Test - der eigentliche Honeypot-Test.
         if test_trade:
             try:
                 data.round_trip = self.jupiter.round_trip(mint)
             except Exception as exc:  # noqa: BLE001
                 data.errors.append(f"Jupiter-Test fehlgeschlagen: {exc}")
 
+        # ---- Stufe 2: ein billiger Chain-Aufruf ------------------------
+
+        # Der Mint-Account traegt Mint- und Freeze-Authority. Ein einzelner
+        # Aufruf, und er entscheidet ueber die schwerwiegendsten Befunde
+        # ueberhaupt - deshalb laeuft er, solange das Budget irgendetwas
+        # hergibt.
+        if self.meter.can_afford(RPC):
+            try:
+                account = self.rpc.get_account_info(mint)
+                self.meter.spend(RPC)
+                data.mint_info = parse_mint_account(mint, account)
+                if data.mint_info is None:
+                    data.errors.append("Adresse ist kein gueltiger Token-Mint")
+            except Exception as exc:  # noqa: BLE001
+                data.errors.append(f"RPC getAccountInfo fehlgeschlagen: {exc}")
+        else:
+            self.meter.deny()
+            data.errors.append("Tagesbudget aufgebraucht - Mint-Account nicht geprueft")
+
+        # ---- Abbruchpunkt ----------------------------------------------
+
+        # Steht bereits ein schwerwiegender Befund fest, ist der Token
+        # erledigt. Alles Weitere kostet Credits und aendert am Urteil nichts.
+        if self._already_disqualified(data):
+            return data
+
+        # ---- Stufe 3: teurere Chain-Abfragen ---------------------------
+
+        pool_addresses = data.rc.pool_addresses
+        supply = data.mint_info.supply if data.mint_info else 0.0
+
+        if supply > 0 and self.meter.can_afford(RPC_LARGE) and self.meter.can_afford(RPC):
+            before_large = self.rpc.large_requests
+            before_plain = self.rpc.requests
+            distribution = fetch_distribution_via_rpc(
+                self.rpc, mint, supply, extra_pool_addresses=pool_addresses
+            )
+            self.meter.spend(RPC_LARGE, self.rpc.large_requests - before_large)
+            self.meter.spend(RPC, self.rpc.requests - before_plain)
+            if distribution is not None:
+                distribution.holder_count = data.rc.total_holders
+                data.distribution = distribution
+                data.holder_source = "rpc"
+
+        # RugCheck als Rueckfall - kostet nichts und traegt die Analyse
+        # weiter, wenn die eigene Chain-Abfrage nicht drin war.
+        if data.distribution is None and data.rc.top_holders:
+            data.distribution = distribution_from_rugcheck(
+                data.rc.top_holders,
+                supply,
+                pool_addresses=pool_addresses,
+                holder_count=data.rc.total_holders,
+            )
+            data.holder_source = "rugcheck"
+
+        if data.distribution is None:
+            data.errors.append(
+                "Keine Holder-Daten (oeffentlicher RPC sperrt getTokenLargestAccounts; "
+                "eigenen RPC-Zugang eintragen)"
+            )
+
+        # ---- Stufe 4: die teuersten Abfragen ---------------------------
+
+        # Geparste Transaktionen kosten das Hundertfache eines gewoehnlichen
+        # Aufrufs. Ein Token, der bis hierher gekommen ist, ist das wert -
+        # jeder andere nicht.
+        if trade_pattern and self.helius.available:
+            if self.meter.can_afford(ENHANCED):
+                try:
+                    data.trades = self.helius.recent_trades(mint)
+                    self.meter.spend(ENHANCED)
+                except Exception as exc:  # noqa: BLE001
+                    data.errors.append(f"Transaktionen nicht abrufbar: {exc}")
+            else:
+                self.meter.deny()
+
+        if check_funding and self.helius.available:
+            wallets = self._top_wallets(data)
+            budget = self.meter.affordable(ENHANCED, FUNDING_BUDGET)
+            if wallets and budget:
+                before = self.helius.requests
+                try:
+                    data.origins = self.helius.origins(
+                        wallets[:FUNDING_EXAMINE],
+                        budget=budget,
+                        cache=self.origin_cache,
+                    )
+                    self.origin_cache.save()
+                except Exception as exc:  # noqa: BLE001
+                    data.errors.append(f"Wallet-Herkunft nicht abrufbar: {exc}")
+                finally:
+                    self.meter.spend(ENHANCED, self.helius.requests - before)
+            elif wallets:
+                self.meter.deny()
+
+        self.meter.save()
         return data
+
+    def _already_disqualified(self, data: TokenData) -> bool:
+        """Ob schon ein schwerwiegender Befund vorliegt.
+
+        Bewusst nur ``CRITICAL``: das sind Befunde, die den Token unabhaengig
+        von allem Weiteren erledigen - lebende Mint-Authority, eingefrorene
+        Konten, kein Verkaufsweg. Ein schlechter Punktestand allein reicht
+        nicht, denn der kann auch daher ruehren, dass noch Daten fehlen.
+        """
+        from .checks import run_checks
+        from .models import Severity
+
+        findings = run_checks(data, self.settings.risk)
+        return any(f.severity is Severity.CRITICAL for f in findings)
 
     @staticmethod
     def _top_wallets(data: TokenData) -> list[str]:
