@@ -886,6 +886,14 @@ function openSheet(mint) {
 
   api('/api/token/' + encodeURIComponent(mint)).then(d => {
     const all = (d.report && d.report.findings) || t.top_findings || [];
+    // Was während der Prüfung schiefging. Stand bisher nur im Bericht und
+    // wurde nie angezeigt – bei einem „Unbekannt" sah man das Ergebnis,
+    // aber nirgends den Grund dafür.
+    const errors = (d.report && d.report.errors) || [];
+    const why = errors.length
+      ? `<h3>Was nicht geprüft werden konnte</h3>` + errors.map(e =>
+          `<div class="finding high">${esc(e)}</div>`).join('')
+      : '';
     const blocks = groups.map(([sev, label]) => {
       const list = all.filter(f => f.severity === sev);
       if (!list.length) return '';
@@ -902,6 +910,7 @@ function openSheet(mint) {
       ${sparkline((t.structure || {}).spark, true)}
       ${figures(m, t.holders)}
       ${ageWarning(m)}
+      ${why}
       ${p ? '<h3>Papierposition</h3>' + positionRow(p) : ''}
       ${linkRow(m)}
       ${blocks || '<h3>Befunde</h3><div class="finding info">keine</div>'}
