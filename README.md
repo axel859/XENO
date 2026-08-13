@@ -754,6 +754,28 @@ Ausstieg ist kein Handel, sondern eine Hoffnung. Sie steht fest, bevor eine
 Position eröffnet wird, und sie ist stumpf — ein Programm hat gegenüber einem
 Menschen an dieser Stelle genau einen Vorteil: **es wird nicht gierig.**
 
+### Warum die Positionen eine eigene Schleife haben
+
+Anfangs liefen die Kursabfragen im Prüfzyklus mit. Der läuft je nach
+Kontingent alle ein bis fünf Minuten — viel zu grob für eine Ausstiegsregel.
+Ein Token, der zwischen zwei Messungen auf 2,5x schießt und auf 1,1x
+zurückfällt, hat sein Ziel erreicht, ohne dass es jemand gesehen hätte. Die
+Bilanz fällt dadurch **schlechter** aus als die Strategie wirklich ist:
+Gewinne werden verpasst, Verluste laufen trotzdem in die Verlustgrenze.
+
+Die Positionen werden deshalb in einem eigenen Thread alle 25 Sekunden
+fortgeschrieben, unabhängig vom Prüfzyklus. Das kostet nichts — die Kurse
+kommen von DexScreener, 30 Token je Anfrage, ohne Kontingent. Teuer sind nur
+die Prüfungen.
+
+Und es ist zugleich die Schleife, die ein echter Auto-Trader später braucht:
+beim Ausstieg entscheidet die Reaktionszeit mit über das Ergebnis. Sie jetzt
+richtig zu bauen erspart es, sie später nachzurüsten — und die Papierbilanz
+misst dann dasselbe Verhalten, das mit echtem Geld liefe.
+
+Ganz aufheben lässt sich die Lücke nie; zwischen zwei Messungen liegt immer
+etwas. Aber 25 Sekunden statt fünf Minuten ist Faktor zwölf.
+
 Ein Token, dessen Markt verschwindet, wird als Totalverlust verbucht, nicht
 als fehlende Messung. Wer das anders macht, rechnet sich die Bilanz schön.
 

@@ -153,6 +153,7 @@ class Watcher:
         tracker=None,
         live=None,
         book=None,
+        tracker_thread=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.state = state or WatchState()
@@ -180,6 +181,16 @@ class Watcher:
 
             book = PaperBook()
         self.book = book
+        # Eigene, schnellere Schleife fuer die offenen Positionen. Sie haengt
+        # bewusst nicht am Pruefzyklus: der laeuft je nach Kontingent alle
+        # ein bis fuenf Minuten, und eine Ausstiegsregel, die nur so oft
+        # hinsieht, verpasst genau die Bewegungen, um die es geht.
+        prices = getattr(self.analyzer, "dexscreener", None)
+        if tracker_thread is None and self.book is not None and prices is not None:
+            from .paper import PositionTracker
+
+            tracker_thread = PositionTracker(self.book, prices, log=self.log)
+        self.tracker_thread = tracker_thread
 
     # -- Ein Durchlauf ----------------------------------------------------
 
@@ -245,24 +256,6 @@ class Watcher:
                 self.book.hit_rate_text(),
             ],
         )
-
-    def _update_book(self, stats: CycleStats) -> None:
-        """Holt Kurse fuer offene Positionen und schliesst, was faellig ist."""
-        open_mints = [p.mint for p in self.book.open_positions]
-        if not open_mints:
-            return
-        try:
-            prices = self.analyzer.dexscreener.prices(open_mints)
-        except Exception as exc:  # noqa: BLE001
-            stats.errors.append(f"Papierhandel: Kurse nicht abrufbar: {exc}")
-            return
-        for position in self.book.update(prices):
-            result = position.result_usd() or 0.0
-            self.log(
-                f"Papierhandel: {position.symbol or position.mint[:8]} zu "
-                f"{position.exit_reason} geschlossen, {result:+.2f} USD"
-            )
-        self.book.save()
 
     def _sample_control(self, screened, now: float) -> int:
         """Zieht ein paar abgelehnte Token als Vergleichsgruppe.
@@ -451,11 +444,6 @@ class Watcher:
                 self.state.mark_alerted(mint, report.verdict)
                 stats.alerts += 1
 
-        # Offene Papierpositionen fortschreiben. Kostet nichts und ist der
-        # einzige Weg, die Calls je zu beurteilen.
-        if self.book is not None:
-            self._update_book(stats)
-
         # Nachverfolgung: was ist aus frueher geprueften Token geworden?
         # Kostet keine RPC-Anfragen und konkurriert damit nicht mit dem
         # Pruefbudget - DexScreener liefert 30 Kurse pro Request.
@@ -514,6 +502,14 @@ class Watcher:
         if self.state.watchlist:
             self.log(f"{len(self.state.watchlist)} Token auf der Watchlist")
 
+        # Positionen laufen in einer eigenen, schnelleren Schleife mit. Der
+        # Pruefzyklus ist dafuer zu grob: eine Ausstiegsregel, die nur alle
+        # fuenf Minuten hinsieht, verpasst genau die Spitzen, um die es geht.
+        if self.tracker_thread is not None and self.tracker_thread.start():
+            self.log(
+                f"Positionsverfolgung alle {self.tracker_thread.interval:.0f}s"
+            )
+
         cycles = 0
         try:
             while max_cycles is None or cycles < max_cycles:
@@ -565,6 +561,10 @@ class Watcher:
         except KeyboardInterrupt:
             self.log("Beendet.")
         finally:
+            if self.tracker_thread is not None:
+                self.tracker_thread.stop()
+            if self.book is not None:
+                self.book.save(force=True)
             try:
                 self.state.save()
             except OSError as exc:

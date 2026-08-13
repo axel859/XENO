@@ -22,6 +22,7 @@ from xeno.paper import (
     TAKE_PROFIT,
     PaperBook,
     Position,
+    PositionTracker,
 )
 
 NOW = 1_700_000_000.0
@@ -288,6 +289,91 @@ class TestMarketCap:
         buy(book, price=1.0, group="CONTROL")
         book.update({MINT: 1.5}, now=NOW + 60)
         assert book.summary()["unrealised_usd"] == pytest.approx(50.0)
+
+
+class FakePrices:
+    """Kursquelle, die zaehlt und auf Wunsch ausfaellt."""
+
+    def __init__(self, prices=None, error: Exception | None = None) -> None:
+        self.values = prices or {}
+        self.error = error
+        self.calls: list[list[str]] = []
+
+    def prices(self, mints, **kwargs):
+        self.calls.append(list(mints))
+        if self.error is not None:
+            raise self.error
+        return {m: self.values[m] for m in mints if m in self.values}
+
+
+class TestPositionTracker:
+    """Die Verfolgung laeuft in einer eigenen, schnelleren Schleife.
+
+    Der Pruefzyklus ist dafuer zu grob: er laeuft je nach Kontingent alle
+    ein bis fuenf Minuten. Ein Token, der dazwischen auf 2.5x schiesst und
+    auf 1.1x zurueckfaellt, hat sein Ziel erreicht, ohne dass es jemand
+    gesehen haette - die Bilanz faellt dadurch schlechter aus als die
+    Strategie wirklich ist.
+    """
+
+    def test_a_tick_closes_what_is_due(self, book):
+        buy(book, price=1.0)
+        source = FakePrices({MINT: TAKE_PROFIT})
+        tracker = PositionTracker(book, source, log=lambda m: None)
+
+        closed = tracker.tick(now=NOW + 60)
+
+        assert len(closed) == 1
+        assert closed[0].exit_reason == "ziel"
+
+    def test_without_open_positions_nothing_is_fetched(self, book):
+        source = FakePrices()
+        assert PositionTracker(book, source).tick() == []
+        assert source.calls == []
+
+    def test_only_open_positions_are_asked_for(self, book):
+        buy(book, "offen", price=1.0)
+        buy(book, "zu", price=1.0)
+        book.update({"zu": TAKE_PROFIT}, now=NOW + 60)
+
+        source = FakePrices({"offen": 1.2})
+        PositionTracker(book, source).tick(now=NOW + 120)
+        assert source.calls == [["offen"]]
+
+    def test_a_broken_price_source_does_not_stop_the_loop(self, book):
+        """Sonst stuenden die Positionen still, ohne dass es auffiele."""
+        buy(book, price=1.0)
+        messages = []
+        tracker = PositionTracker(
+            book, FakePrices(error=OSError("weg")), log=messages.append
+        )
+
+        assert tracker.tick(now=NOW + 60) == []
+        assert tracker.errors == 1
+        assert messages and "Kurse" in messages[0]
+        assert book.open_positions  # Position bleibt bestehen
+
+    def test_closures_are_reported(self, book):
+        buy(book, price=1.0, group="AVOID")
+        messages = []
+        tracker = PositionTracker(
+            book, FakePrices({MINT: TAKE_PROFIT}), log=messages.append
+        )
+        tracker.tick(now=NOW + 60)
+        assert messages and "AVOID" in messages[0]
+
+    def test_the_interval_has_a_floor(self, book):
+        """Sekundentakt bringt nichts ausser Last auf einer fremden API."""
+        assert PositionTracker(book, FakePrices(), interval=0.1).interval >= 5.0
+
+    def test_start_and_stop(self, book):
+        tracker = PositionTracker(book, FakePrices(), interval=5.0)
+        assert tracker.start() is True
+        assert tracker.running is True
+        assert tracker.start() is False       # kein zweiter Thread
+        assert tracker.stop() is True
+        assert tracker.running is False
+        assert tracker.stop() is False
 
 
 def test_decide_needs_a_sane_price():

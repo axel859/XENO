@@ -358,6 +358,106 @@ class PaperBook:
         return f"von {len(closed)} abgeschlossenen Calls waren {wins} im Plus"
 
 
+#: Abstand zwischen zwei Kursabfragen fuer offene Positionen.
+#:
+#: Bewusst entkoppelt vom Pruefzyklus. Der laeuft je nach Kontingent alle
+#: ein bis fuenf Minuten - viel zu grob fuer eine Ausstiegsregel: ein Token,
+#: der zwischen zwei Messungen auf 2.5x schiesst und auf 1.1x zurueckfaellt,
+#: hat sein Ziel erreicht, ohne dass es jemand gesehen haette. Die Bilanz
+#: faellt dadurch schlechter aus als die Strategie wirklich ist.
+#:
+#: Kostet nichts: die Kurse kommen von DexScreener, dreissig Token je
+#: Anfrage, ohne Kontingent. Teuer sind nur die Pruefungen.
+TRACK_INTERVAL = 25.0
+
+
+class PositionTracker:
+    """Verfolgt offene Positionen unabhaengig vom Pruefzyklus.
+
+    Das ist zugleich die Schleife, die ein echter Auto-Trader spaeter
+    braucht: beim Ausstieg entscheidet die Reaktionszeit mit ueber das
+    Ergebnis. Sie jetzt richtig zu bauen erspart es, sie spaeter
+    nachzuruesten - und die Papierbilanz misst dann dasselbe Verhalten, das
+    mit echtem Geld liefe.
+    """
+
+    def __init__(
+        self,
+        book: "PaperBook",
+        dexscreener,
+        interval: float = TRACK_INTERVAL,
+        log=None,
+    ) -> None:
+        self.book = book
+        self.dexscreener = dexscreener
+        self.interval = max(5.0, interval)
+        self.log = log or (lambda message: None)
+        self.stop_event = threading.Event()
+        self.thread: threading.Thread | None = None
+        self.ticks = 0
+        self.errors = 0
+
+    @property
+    def running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def tick(self, now: float | None = None) -> list[Position]:
+        """Ein Durchgang: Kurse holen, faellige Positionen schliessen.
+
+        Getrennt vom Thread, damit sich das Verhalten ohne Warten und ohne
+        Nebenlaeufigkeit pruefen laesst.
+        """
+        open_positions = self.book.open_positions
+        if not open_positions:
+            return []
+        try:
+            prices = self.dexscreener.prices([p.mint for p in open_positions])
+        except Exception as exc:  # noqa: BLE001
+            # Eine ausgefallene Kursquelle darf die Schleife nie beenden -
+            # sonst stuenden die Positionen still, ohne dass es auffiele.
+            self.errors += 1
+            self.log(f"Positionen: Kurse nicht abrufbar: {exc}")
+            return []
+
+        self.ticks += 1
+        closed = self.book.update(prices, now=now)
+        for position in closed:
+            result = position.result_usd() or 0.0
+            self.log(
+                f"Position geschlossen: {position.symbol or position.mint[:8]} "
+                f"({position.group}) zu {position.exit_reason}, {result:+.2f} USD"
+            )
+        self.book.save()
+        return closed
+
+    def _run(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                self.tick()
+            except Exception as exc:  # noqa: BLE001
+                self.errors += 1
+                self.log(f"Positionsverfolgung gestolpert: {exc}")
+            self.stop_event.wait(self.interval)
+
+    def start(self) -> bool:
+        if self.running:
+            return False
+        self.stop_event.clear()
+        self.thread = threading.Thread(
+            target=self._run, daemon=True, name="xeno-positions"
+        )
+        self.thread.start()
+        return True
+
+    def stop(self, timeout: float = 2.0) -> bool:
+        if not self.running:
+            return False
+        self.stop_event.set()
+        if self.thread is not None:
+            self.thread.join(timeout=timeout)
+        return True
+
+
 def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
     """Kennzahlen einer Gruppe von Positionen."""
     closed = [p for p in positions if not p.open]
