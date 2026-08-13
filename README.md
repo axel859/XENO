@@ -589,7 +589,19 @@ sie sich ändern — sonst übersieht man es bei einer Anzeige, die sich alle f�
 Sekunden selbst neu zeichnet. `prefers-reduced-motion` schaltet alles davon ab.
 
 **Und ein Chart.** Ein Werkzeug, das Charts bewertet, sollte auch einen zeigen
-können: jede Karte trägt den Kursverlauf als Linie, eingefärbt nach Richtung.
+können: jede Zeile trägt den Kursverlauf als Linie, eingefärbt nach Richtung.
+
+**Eine Liste ist zum Überblicken da, nicht zum Lesen.** Die Token stehen als
+Zeilen, nicht als Karten — bei 150 geprüften Token passten vorher fünf auf
+einen Bildschirm, jetzt zwanzig. In der Zeile stehen nur die vier Werte, nach
+denen man sucht: Urteil (als Farbstreifen links, damit man beim Scrollen kein
+Wort entziffern muss), Marktwert, Richtung, Punktzahl. Alles Weitere ist einen
+Fingertipp entfernt.
+
+**Filter statt Scrollen.** Mit neunhundert Token entscheidet nicht das Layout,
+ob man etwas findet, sondern ob man die Menge einschränken kann. Über der Liste
+stehen die Urteilsgruppen mit ihren Anzahlen; geladen werden 40 Zeilen auf
+einmal.
 
 ### Vom Handy aus
 

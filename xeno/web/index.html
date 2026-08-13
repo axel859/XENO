@@ -146,11 +146,11 @@ h1 {
 }
 .sub .num { color: var(--text-dim); }
 
-main { max-width: 640px; margin: 0 auto; padding: 14px 16px 60px; }
+main { max-width: 640px; margin: 0 auto; padding: 12px 16px 60px; }
 
 /* ---- Suche ---------------------------------------------------------- */
 
-.search { display: flex; gap: 8px; margin-bottom: 14px; }
+.search { display: flex; gap: 8px; margin-bottom: 11px; }
 .search button { flex: none; }
 .search input { background: var(--panel); border-color: var(--line-soft); }
 .search input:focus { border-color: rgba(53,214,197,.45); }
@@ -161,15 +161,15 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 60px; }
 
 /* ---- Kennzahlen ---------------------------------------------------- */
 
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 11px; }
 .stat {
   background: var(--panel); border: 1px solid var(--line-soft);
-  border-radius: var(--r); padding: 11px 8px; text-align: center;
+  border-radius: 10px; padding: 7px 6px; text-align: center;
 }
-.stat b { display: block; font-size: 19px; font-weight: 600; line-height: 1.2; }
+.stat b { display: block; font-size: 16px; font-weight: 600; line-height: 1.25; }
 .stat span {
-  display: block; margin-top: 3px; color: var(--muted);
-  font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em;
+  display: block; color: var(--muted);
+  font-size: 8.5px; text-transform: uppercase; letter-spacing: .08em;
 }
 /* Kurzes Aufleuchten, wenn sich ein Wert aendert - sonst uebersieht man
    es bei einer Anzeige, die sich alle fuenf Sekunden selbst neu zeichnet. */
@@ -184,15 +184,84 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 60px; }
 nav {
   display: flex; gap: 3px; background: var(--panel);
   border: 1px solid var(--line-soft); border-radius: 11px;
-  padding: 4px; margin-bottom: 14px; overflow-x: auto;
+  padding: 3px; margin-bottom: 11px; overflow-x: auto;
   scrollbar-width: none;
 }
 nav::-webkit-scrollbar { display: none; }
 nav button {
   flex: 1; white-space: nowrap; background: transparent; border: none;
-  padding: 8px 12px; font-size: 13px; color: var(--muted); border-radius: 8px;
+  padding: 7px 11px; font-size: 12.5px; color: var(--muted); border-radius: 8px;
 }
 nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+
+/* ---- Kompakte Liste -------------------------------------------------
+   Bei 158 geprueften Token ist die grosse Karte das falsche Format: es
+   passen fuenf auf einen Bildschirm, und man scrollt minutenlang. Eine
+   Zeile zeigt zwanzig auf einmal.
+
+   Eine Liste ist zum Ueberblicken da, nicht zum Lesen. Deshalb stehen in
+   der Zeile nur die vier Werte, nach denen man sortiert und sucht -
+   Urteil, Groesse, Richtung, Punktzahl. Alles Weitere steht im
+   Detailblatt, einen Fingertipp entfernt.                              */
+
+.rows {
+  border: 1px solid var(--line-soft); border-radius: var(--r);
+  background: var(--panel); overflow: hidden; box-shadow: var(--shadow);
+}
+.r {
+  display: grid;
+  grid-template-columns: 3px 1fr 52px 60px 46px 26px;
+  align-items: center; gap: 8px;
+  padding: 0 12px 0 0;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.r:last-child { border-bottom: none; }
+.r:hover  { background: var(--panel-2); }
+.r:active { background: #1D2634; }
+.r.wl { background: rgba(53,214,197,.045); }
+
+/* Der Farbstreifen traegt das Urteil - beim Durchscrollen liest man ihn,
+   ohne ein einziges Wort zu entziffern. */
+.bar { align-self: stretch; min-height: 42px; background: var(--unknown); }
+.bar.v-OK      { background: var(--ok); }
+.bar.v-CAUTION { background: var(--caution); }
+.bar.v-RISKY   { background: var(--risky); }
+.bar.v-AVOID   { background: var(--avoid); }
+.bar.v-CALL    { background: var(--accent); }
+.bar.v-CONTROL { background: var(--line); }
+
+.r-name { min-width: 0; padding: 7px 0; }
+.r-sym  { font-weight: 600; font-size: 13.5px; overflow: hidden;
+          text-overflow: ellipsis; white-space: nowrap; }
+.r-sub  { font-size: 10px; color: var(--muted); margin-top: 1px;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-num  { text-align: right; font-family: var(--mono);
+          font-variant-numeric: tabular-nums; font-size: 12px; }
+.r-score { text-align: right; font-family: var(--mono); font-size: 11.5px;
+           color: var(--muted); }
+.r .spark { height: 26px; margin: 0; }
+.r .spark .area { opacity: .16; }
+.r .mark { color: var(--accent); }
+
+/* ---- Filterleiste ---------------------------------------------------
+   Mit neunhundert Token entscheidet nicht das Layout, ob man etwas
+   findet, sondern ob man die Menge einschraenken kann. */
+.chips { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto;
+         scrollbar-width: none; padding-bottom: 2px; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; font-size: 11.5px; padding: 5px 10px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.chip:hover { border-color: var(--line); }
+.chip.on { background: var(--panel-2); color: var(--text); border-color: var(--line); }
+.chip b { font-family: var(--mono); font-weight: 600; margin-left: 4px; }
+.more { width: 100%; margin-top: 9px; font-size: 12.5px; color: var(--text-dim); }
+.sec { font-size: 10px; color: var(--muted); margin: 20px 0 8px;
+       text-transform: uppercase; letter-spacing: .1em; }
 
 /* ---- Karten -------------------------------------------------------- */
 
@@ -742,26 +811,67 @@ function positionRow(p) {
   </div>`;
 }
 
-function tokenCard(t, index) {
+/* Eine Zeile je Token. Das Urteil steckt im Farbstreifen links, damit man
+   beim Scrollen nichts lesen muss; der Rest sind die vier Werte, nach
+   denen man tatsächlich sucht. Alles Weitere ist einen Tipp entfernt. */
+function tokenRow(t) {
   const m = t.market || {};
-  const h = t.holders || {};
-  const findings = (t.top_findings || []).slice(0, 2)
-    .map(f => `<div class="finding ${esc(f.severity)}">${esc(f.message)}</div>`).join('');
+  const p = positions[t.mint];
+  const ch = m.price_change_h1_pct;
+  const chCls = ch == null ? '' : (ch >= 0 ? 'up' : 'down');
+  const marks = (t.watchlisted ? '<span class="mark">★</span> ' : '')
+              + (p && p.open ? '<span class="mark">●</span> ' : '');
 
-  return `<div class="card tappable in v-${esc(t.verdict)} ${t.watchlisted ? 'wl' : ''}"
-       style="animation-delay:${Math.min(index, 8) * 34}ms"
-       onclick="openSheet('${esc(t.mint)}')">
-    <div class="card-head">
-      <span class="badge b-${esc(t.verdict)}">${esc(t.verdict)}</span>
-      <span class="sym">${esc(t.symbol || t.mint.slice(0, 10))}${trendChip(t.structure)}</span>
-      <span class="score">${t.score}</span>
-    </div>
-    ${sparkline((t.structure || {}).spark, true)}
-    ${figures(m, h)}
-    <div class="asof">Zahlen von der Prüfung vor ${esc(ago(t.last_checked))}</div>
-    ${positionRow(positions[t.mint])}
-    ${findings}
+  return `<div class="r ${t.watchlisted ? 'wl' : ''}" onclick="openSheet('${esc(t.mint)}')">
+    <span class="bar v-${esc(t.verdict)}"></span>
+    <span class="r-name">
+      <div class="r-sym">${marks}${esc(t.symbol || t.mint.slice(0, 8))}</div>
+      <div class="r-sub">${esc(t.verdict)} · vor ${esc(ago(t.last_checked))}</div>
+    </span>
+    ${sparkline((t.structure || {}).spark, false) || '<span></span>'}
+    <span class="r-num">${money(m.mcap_usd)}</span>
+    <span class="r-num ${chCls}">${pct(ch)}</span>
+    <span class="r-score">${t.score}</span>
   </div>`;
+}
+
+/* ---- Filter und Menge ----------------------------------------------------
+   Mit neunhundert Token entscheidet nicht das Layout, ob man etwas findet,
+   sondern ob man die Menge einschränken kann.                              */
+
+const FILTER_ORDER = ['ALLE', 'OK', 'CAUTION', 'RISKY', 'AVOID', 'UNKNOWN'];
+const PAGE = 40;
+let filter = 'ALLE';
+let shown = PAGE;
+
+function setFilter(name) {
+  filter = name;
+  shown = PAGE;
+  refresh();
+}
+
+function showMore() {
+  shown += PAGE;
+  refresh();
+}
+
+function renderList(box, tokens) {
+  const counts = {ALLE: tokens.length};
+  tokens.forEach(t => { counts[t.verdict] = (counts[t.verdict] || 0) + 1; });
+
+  const chips = FILTER_ORDER.filter(n => n === 'ALLE' || counts[n])
+    .map(n => `<button class="chip ${filter === n ? 'on' : ''}" onclick="setFilter('${n}')">
+      ${n === 'ALLE' ? 'Alle' : (GROUP_LABEL[n] || n)}<b>${counts[n] || 0}</b></button>`).join('');
+
+  const list = filter === 'ALLE' ? tokens : tokens.filter(t => t.verdict === filter);
+  const page = list.slice(0, shown);
+  const rest = list.length - page.length;
+
+  box.innerHTML = `<div class="chips">${chips}</div>`
+    + (page.length
+        ? `<div class="rows">${page.map(tokenRow).join('')}</div>`
+          + (rest ? `<button class="more" onclick="showMore()">weitere ${rest} zeigen</button>` : '')
+        : '<div class="empty">Nichts in dieser Gruppe.</div>');
 }
 
 /* ---- Detailblatt --------------------------------------------------------- */
@@ -958,10 +1068,9 @@ function renderTrades(d) {
       <div class="stat"><b class="${plCls(t.result_usd)}">${usd(t.result_usd)}</b><span>Ergebnis</span></div>
     </div>
 
-    <div class="note">100 $ je Token, raus bei 2x, bei 40 % Verlust oder nach 24 Stunden.
-      Kein echtes Geld.<br><b>Abgelehnt</b> sind Token, die schon der Vorfilter aussortiert
-      hat — drei zufällige je Durchlauf, nur zum Vergleich. Sie sind der Maßstab:
-      laufen sie besser als die geprüften, filtert der Bot falsch.</div>
+    <div class="note">100 $ je Token, raus bei 2x, −40 % oder nach 24 h. Kein echtes Geld.
+      <b>Abgelehnt</b> = vom Vorfilter aussortiert, drei zufällige je Durchlauf. Das ist
+      der Maßstab: laufen sie besser, filtert der Bot falsch.</div>
 
     <div class="wrap-x"><table class="trades">
       <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
@@ -978,18 +1087,27 @@ function renderTrades(d) {
       <b>${GROUP_LABEL[best] || best}</b>. Steht dort „Vermeiden" oder „Abgelehnt",
       filtert der Bot in die falsche Richtung.</div>` : ''}
 
-    <h3 style="font-size:10px;color:var(--muted);margin:20px 0 8px;
-        text-transform:uppercase;letter-spacing:.1em">Positionen</h3>
-    ${(d.positions || []).slice(0, 60).map((p, i) => `<div class="card in v-${esc(p.group)}"
-        style="animation-delay:${Math.min(i, 8) * 34}ms">
-      <div class="card-head">
-        <span class="badge b-${esc(p.group)}">${esc(GROUP_LABEL[p.group] || p.group)}</span>
-        <span class="sym">${esc(p.symbol || p.mint.slice(0, 10))}${p.is_call ? ' 🎯' : ''}</span>
-        <span class="score">${p.open ? 'offen' : esc(p.exit_reason)}</span>
-      </div>
-      ${positionRow(p)}
-      <div class="asof">seit ${esc(ago(p.opened_at))}</div>
-    </div>`).join('')}`;
+    <h3 class="sec">Positionen</h3>
+    <div class="rows">${(d.positions || []).slice(0, 50).map(posRow).join('')}</div>`;
+}
+
+/* Auch hier eine Zeile statt einer Karte. Einstieg → jetzt steht direkt
+   neben dem Ergebnis: ohne den Einstiegswert sagt der aktuelle Marktwert
+   nichts darüber, ob die Position läuft. */
+function posRow(p) {
+  const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
+  return `<div class="r" style="cursor:default">
+    <span class="bar v-${esc(p.group)}"></span>
+    <span class="r-name">
+      <div class="r-sym">${p.is_call ? '<span class="mark">🎯</span> ' : ''}${
+        esc(p.symbol || p.mint.slice(0, 8))}</div>
+      <div class="r-sub">${esc(GROUP_LABEL[p.group] || p.group)} · ${
+        p.open ? 'offen seit ' + esc(ago(p.opened_at)) : esc(p.exit_reason)}</div>
+    </span>
+    <span class="r-num">${money(p.entry_mcap_usd)}</span>
+    <span class="r-num">${money(p.current_mcap_usd)}</span>
+    <span class="r-num ${cls}" style="grid-column:span 2">${usd(p.result_usd)}</span>
+  </div>`;
 }
 
 /* ---- Abfrageschleife -------------------------------------------------------- */
@@ -1006,14 +1124,14 @@ function refresh() {
       setStat('s-tokens', d.tokens.length);
 
       const all = d.tokens.filter(t => t.check_count > 0);
-      document.getElementById('tokens').innerHTML = all.length
-        ? all.map(tokenCard).join('')
-        : `<div class="empty">Noch nichts geprüft.<br>
+      const box = document.getElementById('tokens');
+      if (all.length) renderList(box, all);
+      else box.innerHTML = `<div class="empty">Noch nichts geprüft.<br>
              Watcher starten — oder oben eine Mint-Adresse einfügen.</div>`;
 
       const wl = d.tokens.filter(t => t.watchlisted);
       document.getElementById('watchlist').innerHTML = wl.length
-        ? wl.map(tokenCard).join('')
+        ? `<div class="rows">${wl.map(tokenRow).join('')}</div>`
         : `<div class="empty">Watchlist ist leer.<br>
              Oben einen Token suchen und im Detail auf <b>Beobachten</b> tippen.</div>`;
     }).catch(() => {});
@@ -1034,9 +1152,7 @@ function refresh() {
               <span class="score">${ago(a.at)}</span>
             </div>
             ${sparkline((a.structure || {}).spark, false)}
-            ${a.market ? figures(a.market, {}) : ''}
             ${a.lines.slice(1).map(l => `<div class="finding info">${esc(l)}</div>`).join('')}
-            <div class="mint">${esc(a.mint)}</div>
           </div>`).join('')
         : '<div class="empty">Noch keine Meldungen.</div>';
     }
