@@ -148,6 +148,17 @@ h1 {
 
 main { max-width: 640px; margin: 0 auto; padding: 14px 16px 60px; }
 
+/* ---- Suche ---------------------------------------------------------- */
+
+.search { display: flex; gap: 8px; margin-bottom: 14px; }
+.search button { flex: none; }
+.search input { background: var(--panel); border-color: var(--line-soft); }
+.search input:focus { border-color: rgba(53,214,197,.45); }
+/* Der Name steht klein unter dem Ticker: bei einer Suche nach "bonk" kommen
+   ein Dutzend Token mit demselben Kuerzel zurueck. */
+.hit-name { font-size: 12px; color: var(--muted); margin: -3px 0 2px; }
+.hit-state { font-size: 11px; color: var(--muted); }
+
 /* ---- Kennzahlen ---------------------------------------------------- */
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
@@ -406,6 +417,12 @@ pre.log {
 </header>
 
 <main>
+  <form class="search" onsubmit="lookup(); return false">
+    <input id="q" placeholder="Mint-Adresse oder Name …"
+           autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button class="primary" id="go" type="submit">Prüfen</button>
+  </form>
+
   <div id="notes"></div>
 
   <div class="stats">
@@ -428,11 +445,6 @@ pre.log {
   </div>
 
   <div id="tab-watchlist" class="tab" hidden>
-    <div class="row" style="margin-bottom:12px">
-      <input id="mint" placeholder="Mint-Adresse einfügen" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <button class="primary" onclick="addWatch()">Beobachten</button>
-      <button onclick="checkNow()">Prüfen</button>
-    </div>
     <div id="watchlist"><div class="skel"></div></div>
   </div>
 
@@ -577,6 +589,15 @@ function num(v) {
   return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v));
 }
 
+// Ab zwei Tagen in Tagen. Ein etablierter Token stand hier sonst mit
+// „31845.6h" — eine Zahl, die niemand liest.
+function age(minutes) {
+  if (minutes == null) return '–';
+  if (minutes < 60) return Math.round(minutes) + 'm';
+  if (minutes < 48 * 60) return (minutes / 60).toFixed(1) + 'h';
+  return (minutes / 1440).toFixed(minutes < 14400 ? 1 : 0) + 'd';
+}
+
 function ago(ts) {
   if (!ts) return 'nie';
   const s = Date.now() / 1000 - ts;
@@ -654,8 +675,23 @@ function figures(m, h) {
     <div><b>${num(m.buyers_h1)}</b><span>Käufer</span></div>
     <div><b>${num(m.trade_count_h1 ?? (m.buys_h1 + m.sells_h1))}</b><span>Trades</span></div>
     <div><b>${h && h.top10_pct != null ? h.top10_pct.toFixed(0) + '%' : '–'}</b><span>Top 10</span></div>
-    <div><b>${m.age_minutes != null ? (m.age_minutes >= 60 ? (m.age_minutes/60).toFixed(1)+'h' : Math.round(m.age_minutes)+'m') : '–'}</b><span>Alter</span></div>
+    <div><b>${age(m.age_minutes)}</b><span>Alter</span></div>
   </div>`;
+}
+
+/* Seit es die Suche gibt, kann jede Adresse hier landen — auch die eines
+   Coins, der seit Jahren läuft. Die Prüfungen sind auf frische Token
+   ausgelegt: Zehntausende Wallets sehen dort nach Netzwerk aus, und ein
+   Bestand, der sich über Jahre verteilt hat, nach Bundling. Das Urteil
+   bleibt trotzdem stehen, wie es ist — es wird nur eingeordnet. */
+const ESTABLISHED_MINUTES = 30 * 24 * 60;
+
+function ageWarning(m) {
+  if (m.age_minutes == null || m.age_minutes < ESTABLISHED_MINUTES) return '';
+  return `<div class="note warn">Dieser Token ist <b>${age(m.age_minutes)}</b> alt.
+    XENO prüft auf frische Coins hin — bei etablierten Token schlagen
+    Verteilungs- und Netzwerkprüfungen an, ohne dass etwas faul sein muss.
+    Das Urteil ist hier <b>kein</b> Rugpull-Verdacht.</div>`;
 }
 
 function linkRow(m) {
@@ -730,6 +766,7 @@ function openSheet(mint) {
       </div>
       ${sparkline((t.structure || {}).spark, true)}
       ${figures(m, t.holders)}
+      ${ageWarning(m)}
       ${p ? '<h3>Papierposition</h3>' + positionRow(p) : ''}
       ${linkRow(m)}
       ${blocks || '<h3>Befunde</h3><div class="finding info">keine</div>'}
@@ -743,9 +780,14 @@ function openSheet(mint) {
         <button onclick="window.open('https://dexscreener.com/solana/${esc(mint)}','_blank')">Chart</button>
         <button onclick="closeSheet()">Schließen</button>
       </div>`;
-    document.getElementById('sheet').classList.add('open');
-    document.getElementById('scrim').classList.add('open');
+    showSheet();
   }).catch(() => {});
+}
+
+function showSheet() {
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('scrim').classList.add('open');
+  document.getElementById('sheet').scrollTop = 0;
 }
 
 function closeSheet() {
@@ -753,6 +795,57 @@ function closeSheet() {
   document.getElementById('scrim').classList.remove('open');
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+/* ---- Suche ----------------------------------------------------------------
+   Zwei Wege in dieselbe Prüfung: eine Mint-Adresse geht direkt hinein, ein
+   Name erst durch die Trefferliste. Der Umweg ist bei Namen unvermeidlich -
+   "bonk" gibt es ein Dutzend Mal, und der falsche davon ist genau der, den
+   jemand kaufen soll.                                                        */
+
+const MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+function lookup() {
+  const field = document.getElementById('q');
+  const value = field.value.trim();
+  if (!value || busy) return;
+  if (MINT_RE.test(value)) { field.value = ''; return runCheck(value); }
+
+  const btn = document.getElementById('go');
+  busy = true;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  api('/api/search?q=' + encodeURIComponent(value))
+    .then(d => { field.value = ''; openHits(d); })
+    .catch(err => alert('Suche fehlgeschlagen: ' + err))
+    .finally(() => { busy = false; btn.disabled = false; btn.textContent = 'Prüfen'; });
+}
+
+function openHits(d) {
+  const list = d.matches || [];
+  document.getElementById('sheet-body').innerHTML = `
+    <h2 class="sym">${list.length} Treffer für „${esc(d.query)}"</h2>
+    ${list.length > 1 ? `<div class="note">Denselben Namen trägt jeder, der ihn
+        sich nimmt. Was den Coin eindeutig macht, ist die Adresse darunter.
+        Oben steht der mit dem meisten Umsatz — nicht der mit dem größten
+        Pool: eine große Zahl im Pool kostet nichts, gehandelt werden muss
+        wirklich.</div>` : ''}
+    ${list.length ? '' : `<div class="empty">Nichts gefunden.<br>
+        Mit der Mint-Adresse klappt es sicher — den Namen kennt nur,
+        wer schon einen Pool hat.</div>`}
+    ${list.map((h, i) => `<div class="card tappable in"
+         style="animation-delay:${Math.min(i, 8) * 34}ms"
+         onclick="runCheck('${esc(h.mint)}')">
+      <div class="card-head">
+        <span class="sym">${esc(h.symbol || h.mint.slice(0, 10))}</span>
+        <span class="hit-state">${h.checked ? 'geprüft' : 'prüfen →'}</span>
+      </div>
+      ${h.name && h.name !== h.symbol ? `<div class="hit-name">${esc(h.name)}</div>` : ''}
+      ${figures(h.market || {}, {})}
+      <div class="mint">${esc(h.mint)}</div>
+    </div>`).join('')}
+    <div class="card-actions"><button onclick="closeSheet()">Schließen</button></div>`;
+  showSheet();
+}
 
 /* ---- Reiter und Status ---------------------------------------------------- */
 
@@ -891,13 +984,13 @@ function refresh() {
       document.getElementById('tokens').innerHTML = all.length
         ? all.map(tokenCard).join('')
         : `<div class="empty">Noch nichts geprüft.<br>
-             Watcher starten oder in der Watchlist eine Mint-Adresse prüfen.</div>`;
+             Watcher starten — oder oben eine Mint-Adresse einfügen.</div>`;
 
       const wl = d.tokens.filter(t => t.watchlisted);
       document.getElementById('watchlist').innerHTML = wl.length
         ? wl.map(tokenCard).join('')
         : `<div class="empty">Watchlist ist leer.<br>
-             Mint-Adresse oben einfügen und auf Beobachten tippen.</div>`;
+             Oben einen Token suchen und im Detail auf <b>Beobachten</b> tippen.</div>`;
     }).catch(() => {});
   }
 
@@ -953,10 +1046,9 @@ function toggleWatcher() {
 }
 
 function addWatch(mint) {
-  const value = mint || document.getElementById('mint').value.trim();
-  if (!value) return;
-  api('/api/watchlist', {method: 'POST', body: JSON.stringify({mint: value})})
-    .then(() => { document.getElementById('mint').value = ''; closeSheet(); refresh(); })
+  if (!mint) return;
+  api('/api/watchlist', {method: 'POST', body: JSON.stringify({mint})})
+    .then(() => { closeSheet(); refresh(); })
     .catch(err => alert('Fehler: ' + err));
 }
 
@@ -975,16 +1067,25 @@ function runCheck(mint) {
   sub.innerHTML = '<span class="spin"></span> prüfe ' + esc(mint.slice(0, 10)) + ' …';
   api('/api/check', {method: 'POST', body: JSON.stringify({mint})})
     .then(r => {
-      document.getElementById('mint').value = '';
-      alert(`${r.symbol || 'Token'}: ${r.verdict} (${r.score}/100)`);
+      // Der Bericht kommt vollständig zurück. Ihn gleich einzusortieren
+      // spart das Warten auf den nächsten Abruf der Tokenliste — und vor
+      // allem zeigt das Detailblatt jetzt den ganzen Befund statt eines
+      // Meldungsfensters mit zwei Zahlen darin.
+      tokensByMint[r.mint] = Object.assign({}, tokensByMint[r.mint], {
+        mint: r.mint,
+        symbol: r.symbol,
+        verdict: r.verdict,
+        score: r.score,
+        market: r.market,
+        holders: r.holders,
+        structure: r.structure,
+        top_findings: r.findings,
+        last_checked: Date.now() / 1000,
+      });
+      openSheet(r.mint);
     })
     .catch(err => alert('Fehler: ' + err))
     .finally(() => { busy = false; sub.innerHTML = previous; refresh(); });
-}
-
-function checkNow() {
-  const value = document.getElementById('mint').value.trim();
-  if (value) runCheck(value);
 }
 
 updateBell();

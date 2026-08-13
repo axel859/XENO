@@ -31,7 +31,8 @@ from urllib.parse import parse_qs, urlparse
 from .analyzer import TokenAnalyzer
 from .config import Settings
 from .discovery import Discovery
-from .models import RiskReport
+from .known import looks_like_mint as _looks_like_mint
+from .models import RiskReport, TokenCandidate
 from .notify import Alert, ConsoleNotifier, MultiNotifier, TelegramNotifier
 from .watcher import Watcher
 from .watchstate import WatchState
@@ -301,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"lines": list(self.app.log_lines)})
         if path == "/api/trades":
             return self._json(self._trades())
+        if path == "/api/search":
+            return self._search((query.get("q") or [""])[0])
         if path == "/api/config":
             return self._json(
                 {
@@ -444,6 +447,58 @@ class Handler(BaseHTTPRequestHandler):
         entries.sort(key=lambda e: (not e["watchlisted"], -e["score"]))
         return entries
 
+    def _search(self, term: str) -> None:
+        """Token nach Adresse, Ticker oder Namen finden.
+
+        Liefert nur Marktdaten zurueck, keine Bewertung. Acht Treffer auf
+        Verdacht tief zu pruefen waere die teuerste denkbare Art, eine Liste
+        zu fuellen - geprueft wird erst, was jemand auswaehlt.
+
+        Eine Adresse wird direkt nachgeschlagen statt gesucht: das ist die
+        genauere Abfrage, und sie liefert auch dann einen Treffer, wenn der
+        Name in keinem Suchindex steht.
+        """
+        term = (term or "").strip()
+        if not term:
+            return self._json({"query": "", "matches": []})
+
+        source = getattr(self.analyzer, "dexscreener", None)
+        if source is None:
+            return self._error(503, "Keine Suchquelle eingerichtet")
+
+        try:
+            if _looks_like_mint(term):
+                pair = source.best_pair(term)
+                # Ohne Paar gibt es keine Marktdaten - pruefbar ist der Token
+                # trotzdem. Ein leeres Ergebnis waere hier schlicht falsch.
+                found = [source.as_candidate(pair) if pair else TokenCandidate(mint=term)]
+            else:
+                found = source.search(term)
+        except Exception as exc:  # noqa: BLE001
+            return self._error(502, f"Suche fehlgeschlagen: {exc}")
+
+        with self.app.lock:
+            known = set(self.app.reports)
+
+        return self._json(
+            {
+                "query": term,
+                "matches": [
+                    {
+                        "mint": c.mint,
+                        "symbol": c.symbol,
+                        "name": c.name,
+                        # Schon geprueft? Dann muss niemand Credits dafuer
+                        # ausgeben, nur um denselben Bericht nochmal zu sehen.
+                        "checked": c.mint in known,
+                        "market": c.to_dict(),
+                    }
+                    for c in found
+                    if c is not None
+                ],
+            }
+        )
+
     def _trades(self) -> dict[str, Any]:
         """Der Papierhandel als Ganzes - Gesamtbilanz, Gruppen, Positionen.
 
@@ -526,14 +581,6 @@ def _as_int(value: Any) -> int | None:
         return int(value) if value is not None else None
     except (TypeError, ValueError):
         return None
-
-
-def _looks_like_mint(value: str) -> bool:
-    """Grobe Form einer Solana-Adresse: Base58, 32-44 Zeichen."""
-    if not 32 <= len(value) <= 44:
-        return False
-    allowed = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
-    return set(value) <= allowed
 
 
 def build_server(

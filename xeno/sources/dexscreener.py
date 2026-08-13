@@ -79,6 +79,63 @@ class DexScreener:
         payload = self.http.get(f"{BASE_URL}/latest/dex/tokens/{mint}")
         return (payload or {}).get("pairs") or []
 
+    def search(self, query: str, limit: int = 8) -> list[TokenCandidate]:
+        """Sucht Token nach Name oder Ticker.
+
+        Gedacht fuer den Fall, dass jemand einen Coin erwaehnt und man nur
+        den Namen hat. Zu jedem Mint kommen mehrere Paare zurueck; angezeigt
+        wird das mit der hoechsten Liquiditaet, denn dort entsteht der
+        belastbare Kurs.
+
+        **Sortiert wird aber nach Umsatz, nicht nach Liquiditaet.** Der Grund
+        steht in den Daten: eine Suche nach "bonk" liefert Faelschungen mit
+        142 Mio. USD ausgewiesener Liquiditaet und vier Dollar Tagesumsatz -
+        genau darauf sind sie gebaut, damit sie in solchen Listen oben
+        stehen. Das echte BONK stand mit dieser Sortierung auf Platz fuenf.
+        Umsatz laesst sich nicht so billig vortaeuschen wie eine Zahl im
+        Pool: dafuer muss jemand handeln.
+
+        Summiert wird ueber alle Paare eines Mints, denn bei einem real
+        gehandelten Token verteilt sich der Umsatz auf viele Pools.
+        """
+        query = (query or "").strip()
+        if not query:
+            return []
+        payload = self.http.get(f"{BASE_URL}/latest/dex/search", params={"q": query})
+
+        best: dict[str, dict[str, Any]] = {}
+        volume: dict[str, float] = {}
+        liquidity_total: dict[str, float] = {}
+
+        for pair in (payload or {}).get("pairs") or []:
+            if pair.get("chainId") != self.chain:
+                continue
+            mint = (pair.get("baseToken") or {}).get("address")
+            if not mint:
+                continue
+            liquidity = _to_float((pair.get("liquidity") or {}).get("usd")) or 0.0
+            volume[mint] = volume.get(mint, 0.0) + (
+                _to_float((pair.get("volume") or {}).get("h24")) or 0.0
+            )
+            liquidity_total[mint] = liquidity_total.get(mint, 0.0) + liquidity
+            current = best.get(mint)
+            if current is None or liquidity > (
+                _to_float((current.get("liquidity") or {}).get("usd")) or 0.0
+            ):
+                best[mint] = pair
+
+        ranked = sorted(
+            best.items(),
+            key=lambda entry: (volume[entry[0]], liquidity_total[entry[0]]),
+            reverse=True,
+        )
+        found = []
+        for _mint, pair in ranked[:limit]:
+            candidate = self.as_candidate(pair, source="dexscreener:search")
+            if candidate is not None:
+                found.append(candidate)
+        return found
+
     def prices(self, mints: list[str], batch_size: int = 30) -> dict[str, float]:
         """Aktuelle Preise fuer viele Token auf einmal.
 

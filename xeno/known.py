@@ -93,3 +93,19 @@ def classify_owner(owner: str | None) -> str:
 
 def is_burn_address(address: str | None) -> bool:
     return bool(address) and address in BURN_ADDRESSES
+
+
+#: Base58 kennt kein 0, O, I und l - genau die Zeichen, die man beim
+#: Abtippen verwechselt. Adressen mit ihnen sind sicher falsch.
+BASE58_ALPHABET = frozenset("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+
+
+def looks_like_mint(value: str) -> bool:
+    """Grobe Form einer Solana-Adresse: Base58, 32-44 Zeichen.
+
+    Trennt in der Suche die Adresse vom Namen: eine Adresse wird direkt
+    nachgeschlagen, alles andere geht durch die Textsuche.
+    """
+    if not 32 <= len(value or "") <= 44:
+        return False
+    return set(value) <= BASE58_ALPHABET

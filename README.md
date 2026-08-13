@@ -47,6 +47,7 @@ oder die `.env` von Hand anlegen, siehe [Konfiguration](#konfiguration).
 ```bash
 python3 -m xeno serve                    # Dashboard im Browser + Watcher
 python3 -m xeno check <mint-adresse>     # einen Token gründlich prüfen
+python3 -m xeno search <name-oder-ca>    # einen bestimmten Coin nachschlagen
 python3 -m xeno scan                     # suchen, filtern, prüfen
 python3 -m xeno watch                    # überwachen, nur Konsole/Telegram
 python3 -m xeno stats                    # auswerten, was aus den Urteilen wurde
@@ -525,9 +526,48 @@ den Watcher gleich mit. Solange das Fenster offen ist, läuft der Bot.
 
 Zu sehen sind: Status und Start/Stopp des Watchers, alle geprüften Token mit
 Ampel und Punktzahl, die Watchlist, die letzten Meldungen, die Trades und ein
-Log. Token lassen sich direkt per Mint-Adresse prüfen oder auf die Watchlist
-setzen. Ein Tipp auf eine Karte öffnet ein Blatt mit **allen** Befunden nach
+Log. Ein Tipp auf eine Karte öffnet ein Blatt mit **allen** Befunden nach
 Schweregrad, dem Kursverlauf und den Aktionen.
+
+### Suche — einen bestimmten Coin nachschlagen
+
+Ganz oben steht ein Feld. Dort hinein kommt entweder eine **Mint-Adresse** —
+dann prüft XENO sofort diesen Token — oder ein **Name**, dann kommt erst eine
+Trefferliste. Dasselbe an der Konsole:
+
+```bash
+python3 -m xeno search bonk            # Treffer mit Marktdaten, kostet keine Credits
+python3 -m xeno search bonk --check    # besten Treffer gleich tief prüfen
+python3 -m xeno search <mint> --check  # dasselbe wie xeno check <mint>
+```
+
+Der interessante Teil ist die **Reihenfolge der Treffer**, und der Grund dafür
+steht in echten Daten. Eine Suche nach „bonk" liefert unter anderem das hier:
+
+```
+Bonk    Liquidität $142.013.620   Umsatz 24h $3,99
+Bonk    Liquidität  $50.394.585   Umsatz 24h $5,63
+Bonk    Liquidität     $123.951   Umsatz 24h $95.475   <- das echte BONK
+```
+
+Die ersten beiden sind Fälschungen. Eine große Zahl im Pool kostet nichts —
+genau darauf sind sie gebaut, damit sie in Listen wie dieser oben stehen. Wer
+nach Liquidität sortiert, stellt jedem Suchenden zuerst die Fälschung hin.
+
+XENO sortiert deshalb **nach Umsatz**, summiert über alle Pools eines Tokens.
+Umsatz lässt sich nicht so billig vortäuschen: dafür muss jemand handeln. Mit
+dieser Sortierung steht das echte BONK auf Platz eins statt auf Platz fünf.
+
+Ausgeblendet wird trotzdem nichts — Ausblenden wäre schon eine Bewertung, und
+die trifft die Prüfung, nicht die Suche. Über der Liste steht stattdessen der
+Satz, auf den es ankommt: eindeutig ist ein Coin nur über seine Adresse.
+
+Ein Nebeneffekt der Suche, der benannt gehört: seit es sie gibt, kann auch die
+Adresse eines seit Jahren laufenden Coins hier landen. Die Prüfungen sind auf
+frische Token ausgelegt — zehntausend Wallets sehen dort nach Netzwerk aus,
+ein über Jahre verteilter Bestand nach Bundling. Das Urteil bleibt stehen, wie
+es ist, aber das Detailblatt schreibt bei Token über 30 Tagen dazu, dass es
+hier kein Rugpull-Verdacht ist.
 
 ### Zur Gestaltung
 
@@ -1051,7 +1091,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 317 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 585 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

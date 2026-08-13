@@ -7,7 +7,7 @@ import os
 import sys
 from typing import Any
 
-from .models import RiskReport, ScreenResult, Severity, Verdict
+from .models import RiskReport, ScreenResult, Severity, TokenCandidate, Verdict
 
 _COLORS = {
     Verdict.AVOID: "\033[91m",
@@ -228,6 +228,23 @@ def format_screen_line(result: ScreenResult) -> str:
     if not result.passed:
         line += f"   <- {'; '.join(result.reasons)}"
     return line
+
+
+def format_search_hit(candidate: TokenCandidate) -> str:
+    """Ein Suchtreffer als Zeile.
+
+    Der Name steht neben dem Ticker, weil eine Suche nach einem Namen ein
+    Dutzend Token mit demselben Kuerzel zurueckgibt - unterscheiden lassen
+    die sich nur an Marktwert, Liquiditaet und der Adresse.
+    """
+    name = candidate.name if candidate.name and candidate.name != candidate.symbol else ""
+    return (
+        f"{candidate.label:10.10} {name:18.18} "
+        f"mcap {_money(candidate.mcap_usd):>8}  "
+        f"liq {_money(candidate.liquidity_usd):>8}  "
+        f"alter {_age(candidate.age_minutes):>6}  "
+        f"{candidate.mint}"
+    )
 
 
 def to_json(reports: list[RiskReport]) -> str:

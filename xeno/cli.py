@@ -1,6 +1,7 @@
 """Kommandozeile.
 
     xeno check <mint>    einen Token tief pruefen
+    xeno search <name>   Token nach Adresse, Ticker oder Namen finden
     xeno scan            neue und laufende Token suchen und pruefen
     xeno screen          nur Discovery und Vorfilter zeigen (ohne Deep-Check)
     xeno config          zeigen, welche Konfiguration aktiv ist
@@ -18,6 +19,7 @@ from . import __version__
 from .analyzer import TokenAnalyzer
 from .config import PUBLIC_RPC, Settings
 from .discovery import Discovery
+from .known import looks_like_mint
 from .models import Verdict
 from .net import HttpError
 from .pipeline import Scanner
@@ -25,6 +27,7 @@ from .report import (
     format_report,
     format_report_line,
     format_screen_line,
+    format_search_hit,
     to_json,
 )
 from .screen import screen_all
@@ -113,6 +116,58 @@ def cmd_check(args: argparse.Namespace) -> int:
             print(f"\n{_RPC_HINT}", file=sys.stderr)
 
     return 0 if all(r.verdict is not Verdict.AVOID for r in reports) else 1
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    """Token nach Adresse, Ticker oder Namen finden.
+
+    Ohne ``--check`` kostet das keine RPC-Credits: gesucht wird bei
+    DexScreener, tief geprueft wird nur, was ausdruecklich verlangt ist.
+    Eine Adresse wird direkt nachgeschlagen statt gesucht - das ist die
+    genauere Abfrage.
+    """
+    term = " ".join(args.query).strip()
+    settings = Settings.from_env()
+    analyzer = TokenAnalyzer(settings)
+    is_mint = looks_like_mint(term)
+
+    if is_mint:
+        pair = analyzer.dexscreener.best_pair(term)
+        candidate = analyzer.dexscreener.as_candidate(pair) if pair else None
+        matches = [candidate] if candidate else []
+    else:
+        matches = analyzer.dexscreener.search(term, limit=args.limit)
+
+    if args.check:
+        # Bei einer Adresse wird immer sie selbst geprueft, auch ohne Paar:
+        # kein Handelspaar heisst nicht, dass es den Token nicht gibt - die
+        # Pruefung liest den Mint direkt von der Chain.
+        mint = term if is_mint else (matches[0].mint if matches else "")
+        if not mint:
+            print(f"Nichts gefunden zu '{term}'.", file=sys.stderr)
+            return 1
+        report = analyzer.analyze(mint)
+        if args.json:
+            print(to_json([report]))
+        else:
+            print(format_report(report, verbose=args.verbose))
+            if settings.uses_public_rpc:
+                print(f"\n{_RPC_HINT}", file=sys.stderr)
+        return 0 if report.verdict is not Verdict.AVOID else 1
+
+    if args.json:
+        print(json.dumps([c.to_dict() for c in matches], indent=2, default=str))
+        return 0 if matches else 1
+
+    if not matches:
+        hint = f" Pruefen geht trotzdem: xeno check {term}" if is_mint else ""
+        print(f"Nichts gefunden zu '{term}'.{hint}")
+        return 1
+
+    for candidate in matches:
+        print(format_search_hit(candidate))
+    print(f"\n{len(matches)} Treffer. Pruefen mit: xeno check <mint>")
+    return 0
 
 
 def cmd_screen(args: argparse.Namespace) -> int:
@@ -695,6 +750,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common(p_check)
     p_check.set_defaults(func=cmd_check)
+
+    p_search = sub.add_parser(
+        "search",
+        help="Token nach Adresse, Ticker oder Namen finden",
+        description=(
+            "Sucht bei DexScreener und zeigt die Treffer mit Marktdaten. "
+            "Kostet keine RPC-Credits - erst --check prueft tief."
+        ),
+    )
+    p_search.add_argument("query", nargs="+", help="Mint-Adresse, Ticker oder Name")
+    p_search.add_argument(
+        "--check", action="store_true", help="besten Treffer gleich tief pruefen"
+    )
+    p_search.add_argument("--limit", type=int, default=8, help="max. Treffer (8)")
+    add_common(p_search)
+    p_search.set_defaults(func=cmd_search)
 
     p_screen = sub.add_parser("screen", help="nur Discovery und Vorfilter")
     add_discovery(p_screen)
