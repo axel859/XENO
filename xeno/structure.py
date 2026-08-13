@@ -195,12 +195,18 @@ class Structure:
     change_pct: float | None = None
     #: Abstand zum hoechsten Punkt des Zeitraums, in Prozent.
     drawdown_pct: float | None = None
+    #: Ausgeduennter Kursverlauf fuer die Anzeige. Ein Werkzeug, das Charts
+    #: bewertet, sollte auch einen zeigen koennen - und aus 120 Kerzen wird
+    #: auf einem Handydisplay ohnehin nichts Lesbares.
+    spark: list[float] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.highs is None:
             self.highs = []
         if self.lows is None:
             self.lows = []
+        if self.spark is None:
+            self.spark = []
 
     @property
     def readable(self) -> bool:
@@ -216,7 +222,26 @@ class Structure:
             "drawdown_pct": self.drawdown_pct,
             "swing_highs": len(self.highs),
             "swing_lows": len(self.lows),
+            "spark": list(self.spark),
         }
+
+
+#: So viele Punkte behaelt der ausgeduennte Verlauf fuer die Anzeige.
+SPARK_POINTS = 40
+
+
+def thin(candles: list[Candle], points: int = SPARK_POINTS) -> list[float]:
+    """Duennt den Verlauf gleichmaessig auf wenige Punkte aus.
+
+    Die letzte Kerze bleibt immer erhalten - sie ist der aktuelle Stand, und
+    ein Verlauf, der kurz vor der Gegenwart endet, waere irrefuehrend.
+    """
+    if not candles:
+        return []
+    if len(candles) <= points:
+        return [c.close for c in candles]
+    step = (len(candles) - 1) / (points - 1)
+    return [candles[round(i * step)].close for i in range(points)]
 
 
 def analyse(candles: list[Candle], window: int = SWING_WINDOW) -> Structure:
@@ -224,7 +249,7 @@ def analyse(candles: list[Candle], window: int = SWING_WINDOW) -> Structure:
     if not candles:
         return Structure()
 
-    result = Structure(candle_count=len(candles))
+    result = Structure(candle_count=len(candles), spark=thin(candles))
 
     first, last = candles[0].close, candles[-1].close
     if first > 0:

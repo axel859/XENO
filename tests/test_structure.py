@@ -24,6 +24,7 @@ from xeno.structure import (
     classify,
     swing_highs,
     swing_lows,
+    thin,
 )
 
 RISK = RiskThresholds()
@@ -147,6 +148,46 @@ class TestBreak:
     def test_no_break_inside_the_range(self):
         data = candles(legs([10, 12, 10.5, 12, 10.5, 12], steps=3))
         assert analyse(data).structure_break is Break.NONE
+
+
+class TestSpark:
+    """Der ausgeduennte Verlauf fuer die Anzeige.
+
+    Ein Werkzeug, das Charts bewertet, sollte auch einen zeigen koennen -
+    aus 120 Kerzen wird auf einem Handydisplay aber nichts Lesbares.
+    """
+
+    def test_short_series_stay_complete(self):
+        closes = [1.0, 2.0, 3.0]
+        assert thin(candles(closes)) == [c.close for c in candles(closes)]
+
+    def test_long_series_are_thinned(self):
+        result = thin(candles(list(range(1, 201))), points=20)
+        assert len(result) == 20
+
+    def test_the_last_candle_always_survives(self):
+        """Ein Verlauf, der kurz vor der Gegenwart endet, waere irrefuehrend."""
+        closes = [float(i) for i in range(1, 201)]
+        assert thin(candles(closes), points=20)[-1] == closes[-1]
+
+    def test_the_first_candle_always_survives(self):
+        closes = [float(i) for i in range(1, 201)]
+        assert thin(candles(closes), points=20)[0] == closes[0]
+
+    def test_the_order_is_kept(self):
+        result = thin(candles([float(i) for i in range(1, 101)]), points=10)
+        assert result == sorted(result)
+
+    def test_empty_input(self):
+        assert thin([]) == []
+
+    def test_the_analysis_carries_it(self):
+        result = analyse(candles(rising()))
+        assert result.spark
+        assert result.to_dict()["spark"] == result.spark
+
+    def test_an_empty_analysis_has_an_empty_series(self):
+        assert analyse([]).spark == []
 
 
 class TestCheck:
