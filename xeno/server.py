@@ -123,6 +123,7 @@ class AppState:
                 "passed_screen": stats.passed_screen,
                 "checked": stats.checked,
                 "alerts": stats.alerts,
+                "wakes": getattr(stats, "wakes", 0),
                 "errors": list(stats.errors),
             }
 

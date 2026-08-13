@@ -84,7 +84,14 @@ class TokenState:
     #: Pool-Erstellung als Unix-Zeit, steuert den Wiederholungsabstand.
     created_at: float | None = None
     #: Endgueltig aussortiert - wird nicht mehr geprueft (ausser auf der Watchlist).
+    #:
+    #: Blockiert die *Wiederholungspruefung*, nicht die Aufwach-Erkennung:
+    #: dass ein Token damals einen kritischen Befund hatte, heisst nicht,
+    #: dass er nie wieder gehandelt wird - und genau der Fall soll auffallen.
     dead: bool = False
+    #: Wann zuletzt ein Aufwachen gemeldet wurde. Sperrfrist gegen
+    #: Dauermeldungen, solange eine Bewegung anhaelt.
+    woke_at: float = 0.0
 
     # -- Nachverfolgung des Kursverlaufs ---------------------------------
     #: Zeitpunkt und Kurs beim ersten Deep-Check. Alles Weitere wird daran
@@ -337,6 +344,13 @@ class WatchState:
             state = self.tokens.get(mint)
             if state is not None:
                 state.alerted_verdict = verdict.value
+
+    def mark_woken(self, mint: str, now: float | None = None) -> None:
+        """Startet die Sperrfrist der Aufwach-Erkennung fuer diesen Token."""
+        with self._lock:
+            state = self.tokens.get(mint)
+            if state is not None:
+                state.woke_at = now or time.time()
 
     def add_to_watchlist(self, mint: str, symbol: str = "") -> TokenState:
         with self._lock:

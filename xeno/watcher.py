@@ -69,6 +69,8 @@ class CycleStats:
     control: int = 0
     #: Vorschlaege, die alle Bedingungen erfuellt haben.
     calls: int = 0
+    #: Laengst abgelegte Token, die wieder gehandelt werden.
+    wakes: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -154,6 +156,7 @@ class Watcher:
         live=None,
         book=None,
         tracker_thread=None,
+        wake=None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.state = state or WatchState()
@@ -191,6 +194,15 @@ class Watcher:
 
             tracker_thread = PositionTracker(self.book, prices, log=self.log)
         self.tracker_thread = tracker_thread
+        # Aufwach-Erkennung. Sie schaut auf alles, was XENO je gesehen hat -
+        # der Fall, den der Pruefzyklus nicht abdecken kann, weil er ab Tag
+        # zwei nur noch alle vier Stunden hinsieht und Token mit kritischem
+        # Befund gar nicht mehr.
+        if wake is None and prices is not None:
+            from .wake import WakeWatcher
+
+            wake = WakeWatcher(prices)
+        self.wake = wake
 
     # -- Ein Durchlauf ----------------------------------------------------
 
@@ -199,12 +211,19 @@ class Watcher:
         candidates: list[TokenCandidate],
         budget: int,
         now: float | None = None,
+        woken: list[str] | None = None,
     ) -> list[tuple[str, TokenCandidate | None]]:
         """Stellt zusammen, was in diesem Durchlauf geprueft wird.
 
-        Reihenfolge: Watchlist, dann neue Token, dann faellige Wiederholungen.
-        Die Watchlist zuerst, weil dort eine Verschlechterung unmittelbar Geld
-        kostet - ein verpasster Neuzugang dagegen nur eine Gelegenheit.
+        Reihenfolge: Watchlist, Aufwacher, neue Token, faellige
+        Wiederholungen. Die Watchlist zuerst, weil dort eine Verschlechterung
+        unmittelbar Geld kostet - ein verpasster Neuzugang dagegen nur eine
+        Gelegenheit.
+
+        Die Aufwacher gleich danach, und vor allen Neuzugaengen: dass ein
+        Token nach Tagen der Ruhe das Achtfache seines Tagesschnitts
+        umsetzt, ist ein selteneres Ereignis als ein neuer Pool. Von denen
+        entstehen vierzig in der Minute.
         """
         now = now or time.time()
         by_mint = {c.mint: c for c in candidates}
@@ -219,6 +238,9 @@ class Watcher:
         for state in self.state.watchlist:
             if self.state.is_due(state.mint, now):
                 add(state.mint, by_mint.get(state.mint))
+
+        for mint in woken or []:
+            add(mint, by_mint.get(mint))
 
         # Neue Kandidaten in der Reihenfolge des Profils - bei frischen Token
         # nach Beteiligung, sonst nach Groesse. Das entscheidet, welche das
@@ -256,6 +278,44 @@ class Watcher:
                 self.book.hit_rate_text(),
             ],
         )
+
+    def _wake_alert(self, report: RiskReport, wake) -> Alert:
+        """Baut die Meldung zu einem Aufwacher.
+
+        Das frische Urteil steht daneben, und das ist der Punkt: dass ein
+        Token wieder gehandelt wird, heisst nicht, dass er in Ordnung ist.
+        Ein Honeypot bleibt einer, auch wenn er gerade laeuft - die Meldung
+        sagt "hier passiert etwas", nicht "hier kannst du kaufen".
+        """
+        lines = list(wake.reasons)
+        if wake.previous_verdict and wake.previous_verdict != report.verdict.value:
+            lines.append(
+                f"Urteil damals {wake.previous_verdict}, jetzt {report.verdict.value}"
+            )
+        return Alert(kind=AlertKind.WAKE, report=report, extra_lines=lines)
+
+    def _pulse(self, stats: CycleStats, now: float) -> dict:
+        """Herzschlag ueber alle bekannten Token. Kostet keine RPC-Credits."""
+        if self.wake is None or not self.wake.due(now):
+            return {}
+        try:
+            found = self.wake.scan(self.state, now)
+        except Exception as exc:  # noqa: BLE001
+            # Eine Luecke ist besser als ein Abbruch - aber sie wird genannt.
+            stats.errors.append(f"Puls fehlgeschlagen: {exc}")
+            return {}
+        if getattr(self.wake, "blind", False):
+            stats.errors.append(
+                "Puls ohne Antwort - die Aufwach-Erkennung hat in diesem "
+                "Durchlauf nichts gesehen. Das ist keine Entwarnung."
+            )
+        for wake in found:
+            self.log(
+                f"Aufgewacht: {wake.symbol or wake.mint[:10]} - "
+                f"Volumen {wake.burst:.0f}x, Kurs +{wake.price_change_h1_pct:.0f}%"
+            )
+        stats.wakes = len(found)
+        return {w.mint: w for w in found}
 
     def _sample_control(self, screened, now: float) -> int:
         """Zieht ein paar abgelehnte Token als Vergleichsgruppe.
@@ -403,7 +463,11 @@ class Watcher:
         # faelschlich aussortiert hat.
         stats.control = self._sample_control(screened, now)
 
-        for mint, candidate in self.build_queue(passed, budget, now):
+        # Aufwach-Erkennung vor der Warteschlange: sie entscheidet mit,
+        # wofuer das Pruefbudget ausgegeben wird.
+        woken = self._pulse(stats, now)
+
+        for mint, candidate in self.build_queue(passed, budget, now, list(woken)):
             if stop_event is not None and stop_event.is_set():
                 break
             previous = self.state.get(mint)
@@ -439,7 +503,16 @@ class Watcher:
                     stats.calls += 1
                     self.notifier.send(self._call_alert(report, call))
 
-            if alert is not None:
+            # Ein Aufwacher hat Vorrang vor der gewoehnlichen Meldung: die
+            # sagt "Urteil unveraendert" und faellt damit meist ganz aus -
+            # ausgerechnet in dem Moment, in dem etwas passiert.
+            wake = woken.get(mint)
+            if wake is not None:
+                self.notifier.send(self._wake_alert(report, wake))
+                self.state.mark_alerted(mint, report.verdict)
+                self.state.mark_woken(mint, time.time())
+                stats.alerts += 1
+            elif alert is not None:
                 self.notifier.send(alert)
                 self.state.mark_alerted(mint, report.verdict)
                 stats.alerts += 1
@@ -530,6 +603,7 @@ class Watcher:
                         f"{stats.alerts} gemeldet"
                         + (f", {stats.live} live" if stats.live else "")
                         + (f", {stats.calls} CALL" if stats.calls else "")
+                        + (f", {stats.wakes} aufgewacht" if stats.wakes else "")
                         + (f", {stats.control} Vergleich" if stats.control else "")
                         + (f", {stats.measured} nachverfolgt" if stats.measured else "")
                         + (

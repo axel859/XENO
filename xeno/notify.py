@@ -40,6 +40,10 @@ class AlertKind(str, Enum):
     #: Der einzige Anlass, bei dem XENO von sich aus etwas vorschlaegt.
     #: Alle uebrigen melden nur, dass sich etwas geaendert hat.
     CALL = "call"
+    #: Ein laengst abgelegter Token wird wieder gehandelt. Kein Vorschlag -
+    #: nur der Hinweis, dass dort gerade etwas passiert, was beim letzten
+    #: Blick nicht da war.
+    WAKE = "wake"
 
 
 _TITLES = {
@@ -48,6 +52,7 @@ _TITLES = {
     AlertKind.DEGRADED: "Verschlechtert",
     AlertKind.IMPROVED: "Verbessert",
     AlertKind.CALL: "CALL",
+    AlertKind.WAKE: "Aufgewacht",
 }
 
 _ICONS = {
@@ -56,6 +61,7 @@ _ICONS = {
     AlertKind.DEGRADED: "\U0001f534",  # roter Kreis
     AlertKind.IMPROVED: "\U0001f535",  # blauer Kreis
     AlertKind.CALL: "\U0001f3af",      # Zielscheibe
+    AlertKind.WAKE: "\U0001f4c8",      # steigender Chart
 }
 
 

@@ -881,6 +881,93 @@ zweite Abfrage je Position.
 Die Trefferbilanz steht ab sofort **neben jedem Call**. Ohne sie liest sich
 ein Vorschlag wie eine Gewissheit, und genau das ist er nicht.
 
+## Aufwach-Erkennung — die zweite Chance
+
+Der Fall, den XENO vorher nicht sehen konnte: ein Coin wird geprüft, es passiert
+nichts, er bekommt ein mittelmäßiges Urteil — und zwei Tage später schreibt
+jemand mit Reichweite darüber, und er läuft. Ab dem Moment war der Bot blind.
+Kurse wurden nur bis 24 Stunden nach dem ersten Check nachverfolgt, erneut
+geprüft wurde ab Tag zwei nur alle vier Stunden, und Token mit kritischem
+Befund gar nicht mehr.
+
+**Vorhergesagt wird hier nichts.** Der Auslöser ist nicht vorhersagbar — auch
+nicht mit einem Twitter-Tracker: der sieht den Tweet ebenfalls erst, wenn er da
+ist. Gemessen wird deshalb nicht der Auslöser, sondern der Einschlag. Das hat
+drei Vorteile: es ist eindeutig (ein Tweet über „doge" passt auf vierhundert
+Token, ein Volumensprung auf genau einen Mint), es kostet keine RPC-Credits, und
+es findet **jeden** Auslöser statt nur den einen, auf den man horcht.
+
+Ehrlich zum Nachteil: wer eine direkte Leitung zur Kette hat, ist früher drin.
+Aber ein echter Auslöser ist nicht nach dreißig Sekunden vorbei — er baut über
+Stunden Struktur auf, und genau die misst `structure.py` bereits.
+
+### Das Maß
+
+Verglichen wird ein Token **mit sich selbst**, nicht mit anderen:
+
+```
+burst = Volumen der letzten Stunde / (Tagesvolumen / 24)
+```
+
+Ein Token im Normalzustand liegt bei ungefähr 1. Eine feste Schwelle in Dollar
+wäre hier falsch: sie fände immer nur, was ohnehin am größten ist, nie den
+kleinen Coin, bei dem gerade etwas anfängt.
+
+Beide Zahlen stehen in derselben DexScreener-Antwort, die der Bot ohnehin holt.
+Es braucht also weder eine eigene Historie noch eine einzige zusätzliche
+Anfrage — 114 Token wurden im Test in 2,3 Sekunden abgefragt, zu null Credits.
+
+Die Schwelle stammt aus einer Messung an 53 aktiv gehandelten Token
+(GeckoTerminal-Trending, alle älter als ein Tag):
+
+| Perzentil | burst |
+|-----------|-------|
+| Median    | 0,61  |
+| 90 %      | 1,98  |
+| 95 %      | 4,00  |
+| 98 %      | 6,43  |
+| Maximum   | 6,5   |
+
+`MIN_BURST = 6.0` liegt damit über 98 % dessen, was selbst unter bereits
+*laufenden* Token normal ist. Dazu müssen Kurs (**+10 % in einer Stunde**) und
+Absolutvolumen (**≥ 2.000 USD**) mitgehen. Ein Volumensprung bei fallendem Kurs
+ist ein Ausverkauf, kein Aufwachen.
+
+Gemeldet wird selten — im Live-Test null Treffer bei 76 auswertbaren Token, der
+knappste Fall lag bei burst 5,2. Wer lieber mehr sehen will, senkt `MIN_BURST`
+in `xeno/wake.py`; das ist die eine Zahl, an der man hier dreht.
+
+### Zwei Fallstricke, die beim Messen auffielen
+
+**Unter 24 Stunden ist der Faktor ein Rechenartefakt.** Bei einem frisch
+gestarteten Token ist das Stundenvolumen zwangsläufig gleich dem Tagesvolumen,
+der Faktor also exakt 24 — immer, bei jedem. In der ersten Messung lagen
+sämtliche Neuzugänge auf dem Maximalwert. Wiederaufwachen setzt ein vorheriges
+Leben voraus.
+
+**Ohne Volumenuntergrenze ist der Faktor Rauschen.** In den Daten stand ein
+Token mit 421 USD Tagesumsatz und „+499465 % in einer Stunde" — ein einziger
+Kauf in einen toten Pool.
+
+### Was danach passiert
+
+Ein Aufwacher wird **tief geprüft**, mit Vorrang vor allen Neuzugängen: dass ein
+Token nach Tagen der Ruhe das Achtfache seines Tagesschnitts umsetzt, ist ein
+selteneres Ereignis als ein neuer Pool — von denen entstehen vierzig in der
+Minute. Höchstens drei je Durchlauf, denn die Prüfung danach kostet Credits.
+
+Die Meldung trägt das frische Urteil, und das ist der Punkt: **dass ein Token
+wieder gehandelt wird, heißt nicht, dass er in Ordnung ist.** Ein Honeypot
+bleibt einer, auch wenn er gerade läuft. Steht dort „Urteil damals AVOID, jetzt
+CAUTION", ist das die eigentliche Nachricht.
+
+Je Token gilt eine Sperrfrist von sechs Stunden — ein Lauf über mehrere Stunden
+ist ein Ereignis, nicht zwanzig. Die Sperrfrist steht im Zustand und übersteht
+einen Neustart.
+
+Bleibt eine Abfrage ohne jede Antwort, meldet der Durchlauf das als Lücke statt
+als Ruhe. „Es konnte niemand nachsehen" ist etwas anderes als „nichts passiert".
+
 ## Die Vergleichsgruppe — Fehlalarme sichtbar machen
 
 Bisher verschwanden die im Vorfilter abgelehnten Token spurlos. Von 132
@@ -1091,7 +1178,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 585 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 625 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
@@ -1125,6 +1212,7 @@ xeno/
   models.py        Datentypen, Score und Urteil
   watcher.py       Überwachungsschleife und Meldeentscheidung
   watchstate.py    Zustand, Watchlist, Wiederholungsintervalle
+  wake.py          Aufwach-Erkennung: wer nach Ruhe wieder gehandelt wird
   notify.py        Konsole, Telegram, JSON-Log
   desktop.py       Systemmeldungen und Signalton
   server.py        Dashboard-Server und JSON-API
