@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from conftest import MINT, make_candidate, make_mint_info
 
-from xeno.calls import BLOCKERS, MIN_SIGNALS, Call, evaluate, worth_calling
+from xeno.calls import BLOCKERS, MIN_SIGNALS, evaluate, worth_calling
 from xeno.models import Finding, RiskReport, Severity
 
 

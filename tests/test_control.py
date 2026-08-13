@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from conftest import MINT, make_candidate
 
-from xeno.models import ScreenResult, TokenCandidate
+from xeno.models import ScreenResult
 from xeno.watcher import CONTROL_SAMPLE, Watcher
 from xeno.watchstate import WatchState
 

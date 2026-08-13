@@ -14,7 +14,7 @@ import pytest
 
 from xeno.checks.base import TokenData
 from xeno.config import RiskThresholds, ScreenThresholds
-from xeno.known import TOKEN_2022_PROGRAM, TOKEN_PROGRAM
+from xeno.known import TOKEN_PROGRAM
 from xeno.models import Holder, HolderDistribution, MintInfo, TokenCandidate
 from xeno.sources.rugcheck import RugCheckReport
 

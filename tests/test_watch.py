@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import time
 
-import pytest
 from conftest import MINT, make_candidate, make_mint_info
 
 from xeno.models import Finding, RiskReport, Severity, Verdict
@@ -696,3 +695,33 @@ class TestAusblenden:
         assert entry.baseline_price_usd == 1.0
         assert entry.first_verdict == "AVOID"
         assert entry.check_count == 1
+
+    def test_only_important_narrows_but_keeps_calls(self, tmp_path):
+        """``--only-important`` engt auf den einen Fall ein, bei dem gerade
+        Geld verloren geht - schluckt aber keinen Call mehr."""
+        from xeno.config import Settings
+        from xeno.notify import AlertKind
+        from xeno.server import build_server
+        from xeno.watchstate import WatchState
+
+        httpd, app, thread = build_server(
+            host="127.0.0.1", port=0, settings=Settings(),
+            state=WatchState(tmp_path / "s.json"), use_telegram=False,
+            use_desktop=False, only_important=True,
+        )
+        try:
+            collected = CollectingNotifier()
+            wrapper = next(
+                n for n in thread.watcher.notifier.notifiers
+                if hasattr(n, "kinds")
+            )
+            wrapper.inner = collected
+            from xeno.notify import Alert
+
+            for kind in (AlertKind.CRITICAL_CHANGE, AlertKind.CALL, AlertKind.NEW):
+                thread.watcher.notifier.send(Alert(kind=kind, report=make_report()))
+            kinds = [a.kind for a in collected.alerts]
+            assert AlertKind.CRITICAL_CHANGE in kinds
+            assert AlertKind.NEW not in kinds
+        finally:
+            httpd.server_close()

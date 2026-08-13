@@ -544,6 +544,7 @@ pre.log {
 const token = new URLSearchParams(location.search).get('token') || '';
 let tab = 'tokens';
 let positions = {};      // Papierpositionen nach Mint
+let tradeList = [];      // dieselben als Liste, fuer das Detailblatt
 let tokensByMint = {};   // fuer das Detailblatt
 let busy = false;
 let status = {};
@@ -1141,15 +1142,84 @@ function renderTrades(d) {
       filtert der Bot in die falsche Richtung.</div>` : ''}
 
     <h3 class="sec">Positionen</h3>
-    <div class="rows">${(d.positions || []).slice(0, 50).map(posRow).join('')}</div>`;
+    <div class="rows">${tradeList.map(posRow).join('')}</div>`;
+}
+
+/* ---- Eine Position im Detail ----------------------------------------------
+   Die Zeile sagt, ob es läuft. Hier steht, warum: der Einstieg mit seiner
+   Begründung, der Spitzenkurs (was ein besserer Ausstieg gebracht hätte)
+   und die Regel, die den Ausstieg entschieden hat.                          */
+
+/* Die Regel löst bei 2x aus — verkauft wird zu dem Kurs, der beim
+   Nachsehen dasteht. Springt der Kurs zwischen zwei Abfragen, liegt der
+   auch mal deutlich darüber. „Bei 2x verkauft" wäre deshalb falsch: es
+   stand schon ein Fall mit 3.14x daneben. */
+const EXIT_LABEL = {
+  ziel: 'Gewinnziel ausgelöst — Regel greift ab 2x',
+  verlustgrenze: 'Verlustgrenze ausgelöst — Regel greift ab −40 %',
+  zeit: 'Zeit abgelaufen — nach 24 Stunden verkauft',
+  markt_weg: 'Markt verschwunden — Totalverlust',
+};
+
+function openTrade(i) {
+  const p = tradeList[i];
+  if (!p) return;
+  const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
+  const pct = p.multiple == null ? null : (p.multiple - 1) * 100;
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div class="card-head">
+      <span class="badge b-${esc(p.group)}">${esc(GROUP_LABEL[p.group] || p.group)}</span>
+      <h2 class="sym">${p.is_call ? '🎯 ' : ''}${esc(p.symbol || p.mint.slice(0, 10))}</h2>
+      <span class="score">${p.open ? 'offen' : 'zu'}</span>
+    </div>
+
+    <div class="stats" style="margin-top:12px">
+      <div class="stat"><b>${money(p.entry_mcap_usd)}</b><span>Einstieg</span></div>
+      <div class="stat"><b>${money(p.current_mcap_usd)}</b><span>${p.open ? 'jetzt' : 'Ausstieg'}</span></div>
+      <div class="stat"><b class="${cls}">${usd(p.result_usd)}</b><span>Ergebnis</span></div>
+      <div class="stat"><b class="${cls}">${pct == null ? '–' : (pct >= 0 ? '+' : '') + pct.toFixed(0) + '%'}</b><span>Veränderung</span></div>
+    </div>
+
+    <h3>Verlauf</h3>
+    <div class="figures">
+      <div><b>${money(p.size_usd)}</b><span>Einsatz</span></div>
+      <div><b>${money(p.peak_mcap_usd)}</b><span>Höchststand</span></div>
+      <div><b>${p.peak_multiple == null ? '–' : p.peak_multiple.toFixed(2) + 'x'}</b><span>Spitze</span></div>
+      <div><b>${esc(ago(p.opened_at))}</b><span>gekauft vor</span></div>
+    </div>
+    ${!p.open && p.peak_multiple != null && p.multiple != null
+       && p.peak_multiple > p.multiple * 1.15 ? `<div class="note">
+      In der Spitze stand die Position bei <b>${p.peak_multiple.toFixed(1)}x</b>,
+      verkauft wurde bei <b>${p.multiple.toFixed(1)}x</b>. Die Regel lässt hier
+      etwas liegen — dafür greift sie auch nach unten.</div>` : ''}
+
+    <h3>${p.open ? 'Ausstiegsregel' : 'Ausstieg'}</h3>
+    ${p.open
+      ? `<div class="finding info">Verkauft wird bei 2x, bei −40 % oder nach 24 Stunden —
+           je nachdem, was zuerst eintritt.</div>`
+      : `<div class="finding info">${esc(EXIT_LABEL[p.exit_reason] || p.exit_reason || 'unbekannt')}
+         </div><div class="finding info">geschlossen vor ${esc(ago(p.closed_at))}</div>`}
+
+    ${(p.reasons || []).length ? '<h3>Warum gekauft</h3>'
+      + p.reasons.map(r => `<div class="finding info">${esc(r)}</div>`).join('') : ''}
+
+    <h3>Mint</h3>
+    <div class="mint">${esc(p.mint)}</div>
+    <div class="card-actions">
+      ${tokensByMint[p.mint] ? `<button onclick="openSheet('${esc(p.mint)}')">Token-Bericht</button>` : ''}
+      <button onclick="window.open('https://dexscreener.com/solana/${esc(p.mint)}','_blank')">Chart</button>
+      <button onclick="closeSheet()">Schließen</button>
+    </div>`;
+  showSheet();
 }
 
 /* Auch hier eine Zeile statt einer Karte. Einstieg → jetzt steht direkt
    neben dem Ergebnis: ohne den Einstiegswert sagt der aktuelle Marktwert
    nichts darüber, ob die Position läuft. */
-function posRow(p) {
+function posRow(p, i) {
   const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
-  return `<div class="r" style="cursor:default">
+  return `<div class="r" onclick="openTrade(${i})">
     <span class="bar v-${esc(p.group)}"></span>
     <span class="r-name">
       <div class="r-sym">${p.is_call ? '<span class="mark">🎯</span> ' : ''}${
@@ -1215,6 +1285,7 @@ function refresh() {
   // offenen Positionen mit an.
   api('/api/trades').then(d => {
     positions = {};
+    tradeList = (d.positions || []).slice(0, 50);
     (d.positions || []).forEach(p => { if (!positions[p.mint]) positions[p.mint] = p; });
     if (tab === 'trades') renderTrades(d);
   }).catch(() => {});

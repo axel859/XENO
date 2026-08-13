@@ -17,7 +17,7 @@ import time
 
 from . import __version__
 from .analyzer import TokenAnalyzer
-from .config import PUBLIC_RPC, Settings
+from .config import Settings
 from .discovery import Discovery
 from .known import looks_like_mint
 from .models import Verdict
@@ -415,7 +415,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     token = getattr(httpd, "auth_token", "")
     suffix = f"?token={token}" if token else ""
 
-    print(f"\nXENO Dashboard laeuft\n")
+    print("\nXENO Dashboard laeuft\n")
     print(f"  Auf diesem Rechner:  http://127.0.0.1:{args.port}/{suffix}")
     if args.host not in ("127.0.0.1", "localhost"):
         print(f"  Vom Handy im WLAN:   http://{_local_ip()}:{args.port}/{suffix}")

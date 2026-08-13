@@ -746,6 +746,12 @@ laufen bereits diese drei:
 | Telegram | überall | Bot anlegen, siehe unten |
 | JSON-Datei | zum späteren Auswerten | `--log-file` |
 
+**Ein Tipp auf eine Position** öffnet ihre Einzelansicht: Einstieg, aktueller
+Stand, Ergebnis, der Höchststand seit dem Kauf — und welche Regel den Ausstieg
+ausgelöst hat. Der Höchststand ist die ehrlichste Zahl daran: er zeigt, was ein
+besserer Ausstieg gebracht hätte, und damit, ob die Regel taugt oder nur früh
+verkauft.
+
 **Nicht jede Meldung unterbricht.** Ton, Systemmeldung und Telegram bekommen nur
 drei Anlässe: ein **Call**, eine **kritische Änderung** und ein **Aufwacher**.
 Alles andere — ein neuer Kandidat, eine Verbesserung, eine Verschlechterung ohne
@@ -1230,7 +1236,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 665 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 667 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

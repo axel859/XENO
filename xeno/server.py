@@ -34,7 +34,9 @@ from .discovery import Discovery
 from .known import looks_like_mint as _looks_like_mint
 from .models import RiskReport, TokenCandidate
 from .notify import (
+    INTERRUPTING,
     Alert,
+    AlertKind,
     ConsoleNotifier,
     MultiNotifier,
     OnlyImportant,
@@ -583,6 +585,21 @@ class Handler(BaseHTTPRequestHandler):
                     "result_usd": position.result_usd(price),
                     "exit_reason": position.exit_reason,
                     "reasons": list(position.reasons),
+                    # Fuer die Einzelansicht. Der Spitzenkurs ist die
+                    # ehrlichste Zahl daran: er zeigt, was ein besserer
+                    # Ausstieg gebracht haette - und damit, ob die
+                    # Ausstiegsregel taugt oder nur frueh verkauft.
+                    "size_usd": position.size_usd,
+                    "entry_price": position.entry_price,
+                    "current_price": price,
+                    "peak_mcap_usd": position.mcap_at(position.peak_price),
+                    "peak_multiple": (
+                        position.peak_price / position.entry_price
+                        if position.entry_price and position.peak_price
+                        else None
+                    ),
+                    "multiple": position.multiple,
+                    "strength": position.strength,
                 }
             )
 
@@ -663,8 +680,12 @@ def build_server(
     # Die Oberflaeche bekommt alles, Telegram und Systemmeldungen nur das,
     # was eine Unterbrechung wert ist. Vorher gingen ueber hundert Meldungen
     # pro Nacht raus - und wer hundert bekommt, liest keine davon.
+    #
+    # ``--only-important`` engt weiter ein, auf den einen Fall, bei dem
+    # gerade Geld verloren geht.
+    kinds = {AlertKind.CRITICAL_CHANGE} if only_important else INTERRUPTING
     notifier = MultiNotifier(
-        [*(OnlyImportant(c) for c in channels), Collector()], on_error=app.log
+        [*(OnlyImportant(c, kinds) for c in channels), Collector()], on_error=app.log
     )
     analyzer = TokenAnalyzer(settings)
     watcher = Watcher(

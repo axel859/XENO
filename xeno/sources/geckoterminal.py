@@ -8,11 +8,14 @@ Interesse von ein paar Bots, die sich gegenseitig zuspielen.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from ..models import TokenCandidate
 from ..net import HttpClient
+
+if TYPE_CHECKING:  # zur Laufzeit waere der Import zirkulaer
+    from ..structure import Candle
 
 BASE_URL = "https://api.geckoterminal.com/api/v2"
 

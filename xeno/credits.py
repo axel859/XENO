@@ -38,7 +38,7 @@ import os
 import tempfile
 import threading
 import time
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 METER_FILE_NAME = "credits.json"

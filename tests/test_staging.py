@@ -15,13 +15,12 @@ ein billiger Aufruf, und die teuren nur fuer die, die noch im Rennen sind.
 
 from __future__ import annotations
 
-import pytest
 from conftest import MINT, make_candidate, make_mint_info
 
 from xeno.analyzer import TokenAnalyzer
 from xeno.checks.base import TokenData
 from xeno.config import Settings
-from xeno.credits import ENHANCED, RPC, CreditMeter
+from xeno.credits import RPC, CreditMeter
 from xeno.known import TOKEN_PROGRAM
 from xeno.sources.helius import Origin, Trade
 from xeno.sources.rugcheck import RugCheckReport

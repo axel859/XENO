@@ -208,10 +208,19 @@ class DesktopNotifier:
         return True
 
     def send(self, alert: Alert) -> None:
-        """Notifier-Schnittstelle - wird vom Watcher aufgerufen."""
+        """Notifier-Schnittstelle - wird vom Watcher aufgerufen.
+
+        Hier wird nicht mehr gefiltert, nur noch die Lautstaerke bestimmt.
+        Vorher stand an dieser Stelle ``if self.only_important and not
+        urgent: return`` mit ``LOUD_KINDS = {CRITICAL_CHANGE, DEGRADED}`` -
+        und weil die Liste beim Bau der Calls und der Aufwach-Erkennung nie
+        mitgezogen wurde, verschluckte ``--only-important`` ausgerechnet
+        die beiden Anlaesse, wegen derer man den Bot laufen laesst.
+
+        Was ueberhaupt zugestellt wird, entscheidet jetzt ``OnlyImportant``
+        in ``notify.py`` - an einer Stelle, fuer alle Kanaele.
+        """
         urgent = alert.kind in LOUD_KINDS
-        if self.only_important and not urgent:
-            return
 
         lines = alert.summary_lines()
         body = f"{alert.token_label} - {lines[0] if lines else ''}"

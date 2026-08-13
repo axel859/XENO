@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from conftest import MINT, make_candidate, make_data, make_distribution, rugcheck
+from conftest import MINT, make_candidate, make_data, rugcheck
 
 from xeno.analyzer import build_report
 from xeno.chain import build_distribution, distribution_from_rugcheck, parse_mint_account
-from xeno.config import ScreenThresholds, Settings
+from xeno.config import Settings
 from xeno.discovery import merge_candidates
 from xeno.known import TOKEN_2022_PROGRAM, TOKEN_PROGRAM
 from xeno.models import Finding, RiskReport, Severity, Verdict

@@ -96,19 +96,37 @@ class TestThrottling:
 
 
 class TestFiltering:
+    """Der Kanal bestimmt nur noch die Lautstaerke, nicht die Zustellung.
+
+    Vorher filterte ``DesktopNotifier`` selbst mit ``LOUD_KINDS``, und weil
+    diese Liste beim Bau der Calls und der Aufwach-Erkennung nie mitgezogen
+    wurde, verschluckte ``--only-important`` ausgerechnet die beiden
+    Anlaesse, wegen derer man den Bot ueberhaupt laufen laesst. Was
+    zugestellt wird, entscheidet jetzt ``OnlyImportant`` in ``notify.py`` -
+    an einer Stelle, fuer alle Kanaele.
+    """
+
     def test_important_kinds_are_loud(self):
         assert AlertKind.CRITICAL_CHANGE in LOUD_KINDS
-        assert AlertKind.DEGRADED in LOUD_KINDS
         assert AlertKind.NEW not in LOUD_KINDS
 
-    def test_only_important_skips_new_candidates(self, calls):
-        notifier = DesktopNotifier(platform="linux", only_important=True)
-        notifier.send(make_alert(AlertKind.NEW))
-        assert calls == []
+    def test_a_call_is_never_swallowed(self, calls):
+        """Der Fehler, um den es hier geht."""
+        DesktopNotifier(platform="linux", only_important=True).send(
+            make_alert(AlertKind.CALL)
+        )
+        assert len(calls) == 1
 
-    def test_only_important_still_reports_degradation(self, calls):
-        notifier = DesktopNotifier(platform="linux", only_important=True)
-        notifier.send(make_alert(AlertKind.DEGRADED))
+    def test_a_wake_up_is_never_swallowed(self, calls):
+        DesktopNotifier(platform="linux", only_important=True).send(
+            make_alert(AlertKind.WAKE)
+        )
+        assert len(calls) == 1
+
+    def test_a_critical_change_still_reports(self, calls):
+        DesktopNotifier(platform="linux", only_important=True).send(
+            make_alert(AlertKind.CRITICAL_CHANGE)
+        )
         assert len(calls) == 1
 
     def test_default_reports_everything(self, calls):

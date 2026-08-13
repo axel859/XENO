@@ -13,7 +13,6 @@ import time
 from conftest import MINT, make_candidate, make_mint_info
 
 from xeno.follow import (
-    HORIZONS,
     OutcomeTracker,
     due_measurements,
     is_dead,
