@@ -393,6 +393,17 @@ class Handler(BaseHTTPRequestHandler):
             "uptime": time.time() - self.app.started_at,
             "uses_public_rpc": self.app.settings.uses_public_rpc,
             "watchlist": len(self.app.state.watchlist),
+            # Das Kontingent gehoert in die Oberflaeche, nicht nur ins Log.
+            # Einmal ist es unbemerkt leergelaufen, weil es ausschliesslich
+            # auf der Webseite des Anbieters stand.
+            "credits": (
+                self.watcher_thread.watcher.analyzer.meter.snapshot()
+                if getattr(self.watcher_thread.watcher.analyzer, "meter", None)
+                else None
+            ),
+            #: Zeitpunkt des letzten Durchlaufs - die Oberflaeche zeigt daraus
+            #: an, wann der naechste kommt.
+            "last_cycle_at": (last_cycle or {}).get("at"),
             "live": (
                 {
                     "running": self.watcher_thread.watcher.live.running,

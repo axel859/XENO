@@ -1,176 +1,406 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0d10">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#080B11">
 <title>XENO</title>
 <style>
-  :root {
-    --bg: #0b0d10;
-    --panel: #14181d;
-    --panel-2: #1a1f26;
-    --line: #262d36;
-    --text: #e6eaef;
-    --muted: #8b95a3;
-    --ok: #35d07f;
-    --caution: #e8b339;
-    --risky: #f08a3c;
-    --avoid: #ef4a5a;
-    --unknown: #6b7683;
-    --accent: #4aa3ef;
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  header {
-    position: sticky; top: 0; z-index: 10;
-    background: rgba(11,13,16,.92);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--line);
-    padding: 12px 16px calc(12px + env(safe-area-inset-top)) 16px;
-    padding-top: calc(12px + env(safe-area-inset-top));
-  }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand h1 { margin: 0; font-size: 19px; letter-spacing: .08em; font-weight: 700; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--unknown); flex: none; }
-  .dot.on { background: var(--ok); box-shadow: 0 0 0 4px rgba(53,208,127,.16); }
-  .sub { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+/* ===================================================================
+   XENO - Oberflaeche
 
-  main { padding: 14px 16px 90px; max-width: 780px; margin: 0 auto; }
+   Gestaltungsgedanke: ein Messgeraet, das nachts laeuft. Kein helles
+   Web-Dashboard, sondern eine dunkle Anzeige mit einem kuehlen Akzent
+   und warmen Warnfarben.
 
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  button {
-    font: inherit; font-size: 14px; color: var(--text);
-    background: var(--panel-2); border: 1px solid var(--line);
-    padding: 9px 14px; border-radius: 9px; cursor: pointer;
-  }
-  button:active { transform: translateY(1px); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #06121e; font-weight: 600; }
-  button.danger { background: transparent; border-color: var(--avoid); color: var(--avoid); }
-  button:disabled { opacity: .45; }
+   Die eine Entscheidung, aus der alles folgt: **jede Zahl steht in
+   Mono mit Tabellenziffern.** Dieses Werkzeug zeigt fast nur Zahlen,
+   und untereinander vergleichbar sind sie nur, wenn die Ziffern
+   gleich breit sind.
 
-  input {
-    font: inherit; font-size: 15px; color: var(--text);
-    background: var(--panel-2); border: 1px solid var(--line);
-    padding: 10px 12px; border-radius: 9px; width: 100%;
-  }
-  input::placeholder { color: var(--muted); }
+   Der Akzent ist bewusst kuehl (Aqua). Die vier Urteilsfarben sind
+   allesamt warm - so kollidiert der Akzent nie mit einer Statusfarbe,
+   und "wichtig" laesst sich von "gefaehrlich" unterscheiden.
+   =================================================================== */
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 16px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 10px 8px; text-align: center; }
-  .stat b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
-  .stat span { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+:root {
+  --ground:    #080B11;
+  --panel:     #101620;
+  --panel-2:   #18202C;
+  --line:      #222C3A;
+  --line-soft: #171E29;
 
-  nav { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line);
-        border-radius: 11px; padding: 4px; margin-bottom: 14px; }
-  nav button { flex: 1; background: transparent; border: none; padding: 9px 4px; font-size: 13.5px; color: var(--muted); }
-  nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+  --text:      #DDE5F2;
+  --text-dim:  #9AA7B8;
+  --muted:     #6B7789;
 
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-          padding: 13px 14px; margin-bottom: 9px; }
-  .card.wl { border-left: 3px solid var(--accent); }
-  .card-head { display: flex; align-items: center; gap: 9px; }
-  .badge { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; padding: 3px 8px;
-           border-radius: 6px; flex: none; }
-  .OK      { background: rgba(53,208,127,.16); color: var(--ok); }
-  .CAUTION { background: rgba(232,179,57,.16); color: var(--caution); }
-  .RISKY   { background: rgba(240,138,60,.16); color: var(--risky); }
-  .AVOID   { background: rgba(239,74,90,.16); color: var(--avoid); }
-  .UNKNOWN { background: rgba(107,118,131,.16); color: var(--unknown); }
-  /* Vergleichsgruppe: bewusst unauffaellig - sie ist kein Urteil, sondern
-     die Stichprobe, gegen die geprueft wird. */
-  .CONTROL { background: rgba(107,118,131,.10); color: var(--muted); }
-  .CALL    { background: rgba(74,163,239,.16); color: var(--accent); }
-  .sym { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .score { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; flex: none; }
-  .meta { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  --accent:    #35D6C5;
+  --accent-dim:#1B6F68;
 
-  /* Marktdaten: Raster statt Fliesstext, damit man beim Vergleichen zweier
-     Karten die Werte untereinander findet. */
-  .figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 8px; margin-top: 9px; }
-  .figures div { min-width: 0; }
-  .figures b { display: block; font-size: 13.5px; font-weight: 600; color: var(--text);
-               font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
-  .figures span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-  .figures .up { color: var(--ok); }
-  .figures .down { color: var(--avoid); }
-  /* Ohne Zeitstempel liest sich eine 40 Minuten alte Zahl wie ein Live-Kurs. */
-  .asof { color: var(--muted); font-size: 11px; margin-top: 8px; }
-  .trend { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
-           padding: 2px 7px; border-radius: 5px; margin-left: 6px; vertical-align: 1px; }
-  .trend-up       { background: rgba(53,208,127,.16); color: var(--ok); }
-  .trend-down     { background: rgba(239,74,90,.16);  color: var(--avoid); }
-  .trend-sideways { background: rgba(107,118,131,.16); color: var(--unknown); }
-  .links { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-  .links a { font-size: 11.5px; color: var(--accent); text-decoration: none;
-             border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+  /* Warme Rampe fuer die Urteile - klar getrennt vom kuehlen Akzent. */
+  --ok:        #41D98E;
+  --caution:   #EAB63C;
+  --risky:     #F2903F;
+  --avoid:     #F45B62;
+  --unknown:   #64707F;
 
-  /* Papierhandel: Einstieg → jetzt, und was dabei herauskommt. */
-  .pos { display: flex; align-items: baseline; gap: 8px; margin-top: 8px;
-         padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; }
-  .pos .arrow { color: var(--muted); }
-  .pos .pl { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .plus { color: var(--ok); }
-  .minus { color: var(--avoid); }
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  table.trades { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.trades th { text-align: right; color: var(--muted); font-weight: 500;
-                    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
-                    padding: 6px 4px; border-bottom: 1px solid var(--line); }
-  table.trades th:first-child, table.trades td:first-child { text-align: left; }
-  table.trades td { text-align: right; padding: 7px 4px; border-bottom: 1px solid var(--line-soft, #1b2027);
-                    font-variant-numeric: tabular-nums; }
-  table.trades tr.best td { background: rgba(53,208,127,.07); }
-  .grp { font-weight: 600; }
-  .grp.CALL { color: var(--accent); }
-  .wrap-x { overflow-x: auto; }
-  .finding { font-size: 12.5px; margin-top: 5px; padding-left: 15px; position: relative; color: #c3cbd6; }
-  .finding::before { content: ""; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
-  .finding.critical::before, .finding.high::before { background: var(--avoid); }
-  .finding.medium::before { background: var(--caution); }
-  .finding.low::before, .finding.info::before { background: var(--unknown); }
-  .mint { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
-          color: var(--muted); margin-top: 8px; word-break: break-all; }
-  .card-actions { display: flex; gap: 7px; margin-top: 10px; }
-  .card-actions button { padding: 6px 11px; font-size: 12.5px; }
+  --r: 13px;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+}
 
-  .empty { color: var(--muted); text-align: center; padding: 42px 20px; font-size: 14px; }
-  .note { background: rgba(74,163,239,.09); border: 1px solid rgba(74,163,239,.28);
-          border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: #b8d4ef; margin-bottom: 14px; }
-  .warn { background: rgba(232,179,57,.09); border-color: rgba(232,179,57,.28); color: #e8cf9a; }
+* { box-sizing: border-box; }
 
-  .alert-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-  .kind-new { color: var(--ok); }
-  .kind-critical_change { color: var(--avoid); }
-  .kind-degraded { color: var(--risky); }
-  .kind-improved { color: var(--accent); }
-  .when { color: var(--muted); font-size: 11.5px; float: right; }
+html, body { height: 100%; }
 
-  pre.log { background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
-            padding: 12px; font-size: 11.5px; color: var(--muted); overflow-x: auto;
-            white-space: pre-wrap; word-break: break-word; margin: 0; }
-  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line);
-          border-top-color: var(--accent); border-radius: 50%; animation: r .7s linear infinite;
-          vertical-align: -1px; }
-  @keyframes r { to { transform: rotate(360deg); } }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 620px at 50% -10%, #0E1622 0%, transparent 70%),
+    var(--ground);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Alle Zahlen gleich breit - sonst springt jede Aktualisierung. */
+.num, .figures b, .stat b, table.trades td, .score, .pl, .mint, pre.log {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+button, input {
+  font: inherit; color: inherit;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 13px; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+button:hover { background: #202A38; border-color: #2E3A4B; }
+button:active { transform: scale(.97); }
+button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+button.primary { background: var(--accent); color: #05231F; border-color: transparent; font-weight: 600; }
+button.primary:hover { background: #4AE6D5; }
+button.danger { color: var(--avoid); border-color: rgba(244,91,98,.3); }
+button:disabled { opacity: .5; cursor: default; }
+
+input { width: 100%; }
+input::placeholder { color: var(--muted); }
+
+/* ---- Kopf ---------------------------------------------------------- */
+
+header {
+  position: sticky; top: 0; z-index: 40;
+  padding: calc(14px + env(safe-area-inset-top)) 16px 12px;
+  background: rgba(8,11,17,.82);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.brand { display: flex; align-items: center; gap: 11px; }
+
+h1 {
+  margin: 0; font-size: 19px; font-weight: 700;
+  letter-spacing: .22em; text-transform: uppercase;
+}
+
+/* Der Puls sagt "ich arbeite noch" - die einzige Bewegung, die auch dann
+   etwas mitteilt, wenn seit Minuten nichts passiert ist. */
+.pulse { position: relative; width: 9px; height: 9px; flex: none; }
+.pulse i {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: var(--muted); display: block;
+}
+.pulse.on i { background: var(--accent); }
+.pulse.on::after {
+  content: ""; position: absolute; inset: -3px;
+  border-radius: 50%; border: 1px solid var(--accent);
+  animation: ping 2.4s cubic-bezier(0, 0, .2, 1) infinite;
+}
+@keyframes ping {
+  0%   { transform: scale(.7); opacity: .9; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* Ring bis zum naechsten Durchlauf. Kein Zierrat: er beantwortet die
+   Frage "wann schaut er wieder nach", ohne dass man das Log oeffnet. */
+.ring { width: 30px; height: 30px; flex: none; margin-left: auto; }
+.ring circle { fill: none; stroke-width: 2.5; transform: rotate(-90deg); transform-origin: 50% 50%; }
+.ring .bg { stroke: var(--line); }
+.ring .fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .9s linear; }
+
+.sub {
+  margin-top: 7px; font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.sub .num { color: var(--text-dim); }
+
+main { max-width: 640px; margin: 0 auto; padding: 14px 16px 60px; }
+
+/* ---- Kennzahlen ---------------------------------------------------- */
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+.stat {
+  background: var(--panel); border: 1px solid var(--line-soft);
+  border-radius: var(--r); padding: 11px 8px; text-align: center;
+}
+.stat b { display: block; font-size: 19px; font-weight: 600; line-height: 1.2; }
+.stat span {
+  display: block; margin-top: 3px; color: var(--muted);
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em;
+}
+/* Kurzes Aufleuchten, wenn sich ein Wert aendert - sonst uebersieht man
+   es bei einer Anzeige, die sich alle fuenf Sekunden selbst neu zeichnet. */
+.stat b.bump { animation: bump .8s ease; }
+@keyframes bump {
+  0%   { color: var(--accent); transform: translateY(-2px); }
+  100% { color: inherit; transform: none; }
+}
+
+/* ---- Reiter -------------------------------------------------------- */
+
+nav {
+  display: flex; gap: 3px; background: var(--panel);
+  border: 1px solid var(--line-soft); border-radius: 11px;
+  padding: 4px; margin-bottom: 14px; overflow-x: auto;
+  scrollbar-width: none;
+}
+nav::-webkit-scrollbar { display: none; }
+nav button {
+  flex: 1; white-space: nowrap; background: transparent; border: none;
+  padding: 8px 12px; font-size: 13px; color: var(--muted); border-radius: 8px;
+}
+nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+
+/* ---- Karten -------------------------------------------------------- */
+
+.card {
+  position: relative; background: var(--panel);
+  border: 1px solid var(--line-soft); border-left: 3px solid var(--unknown);
+  border-radius: var(--r); padding: 13px 14px; margin-bottom: 9px;
+  box-shadow: var(--shadow);
+}
+.card.tappable { cursor: pointer; transition: border-color .15s ease, transform .1s ease; }
+.card.tappable:hover { border-color: var(--line); }
+.card.tappable:active { transform: scale(.995); }
+/* Die Farbkante traegt das Urteil - beim Durchscrollen liest man sie,
+   ohne die Plakette zu entziffern. */
+.card.v-OK      { border-left-color: var(--ok); }
+.card.v-CAUTION { border-left-color: var(--caution); }
+.card.v-RISKY   { border-left-color: var(--risky); }
+.card.v-AVOID   { border-left-color: var(--avoid); }
+.card.v-CONTROL { border-left-color: var(--line); }
+.card.wl { box-shadow: var(--shadow), inset 3px 0 0 -1px var(--accent); }
+
+/* Gestaffeltes Einblenden: was neu dazukommt, faellt auf. */
+.card.in { animation: rise .34s cubic-bezier(.2,.7,.3,1) backwards; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(9px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.card-head { display: flex; align-items: center; gap: 9px; }
+.badge {
+  font-size: 10px; font-weight: 700; letter-spacing: .07em;
+  padding: 3px 8px; border-radius: 6px; flex: none; font-family: var(--mono);
+}
+.b-OK      { background: rgba(65,217,142,.14);  color: var(--ok); }
+.b-CAUTION { background: rgba(234,182,60,.14);  color: var(--caution); }
+.b-RISKY   { background: rgba(242,144,63,.14);  color: var(--risky); }
+.b-AVOID   { background: rgba(244,91,98,.14);   color: var(--avoid); }
+.b-UNKNOWN { background: rgba(100,112,127,.14); color: var(--unknown); }
+.b-CONTROL { background: rgba(100,112,127,.10); color: var(--muted); }
+.b-CALL    { background: rgba(53,214,197,.14);  color: var(--accent); }
+
+.sym { font-weight: 600; flex: 1; min-width: 0; overflow: hidden;
+       text-overflow: ellipsis; white-space: nowrap; }
+.score { color: var(--muted); font-size: 12.5px; flex: none; }
+
+.trend { font-size: 9.5px; font-weight: 700; letter-spacing: .06em;
+         padding: 2px 6px; border-radius: 5px; margin-left: 7px; vertical-align: 1px; }
+.t-up       { background: rgba(65,217,142,.13); color: var(--ok); }
+.t-down     { background: rgba(244,91,98,.13);  color: var(--avoid); }
+.t-sideways { background: rgba(100,112,127,.13); color: var(--muted); }
+
+/* ---- Sparkline ------------------------------------------------------ */
+
+.spark { display: block; width: 100%; height: 42px; margin-top: 11px; }
+.spark path.area { opacity: .16; }
+.spark path.line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.spark circle { r: 2.4; }
+.spark .grid { stroke: var(--line-soft); stroke-width: 1; vector-effect: non-scaling-stroke; }
+/* Die Linie zeichnet sich einmal - danach ist sie ruhig. */
+.spark path.line.draw { stroke-dasharray: 300; stroke-dashoffset: 300; animation: draw .9s ease forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+
+/* ---- Zahlenraster --------------------------------------------------- */
+
+.figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px 8px; margin-top: 11px; }
+.figures div { min-width: 0; }
+.figures b {
+  display: block; font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.figures span {
+  display: block; font-size: 9px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-top: 1px;
+}
+.up { color: var(--ok); }
+.down { color: var(--avoid); }
+
+.asof { color: var(--muted); font-size: 10.5px; margin-top: 9px; }
+
+.finding {
+  font-size: 12.5px; margin-top: 6px; padding-left: 16px;
+  position: relative; color: var(--text-dim);
+}
+.finding::before {
+  content: ""; position: absolute; left: 3px; top: 7px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--unknown);
+}
+.finding.critical::before, .finding.high::before { background: var(--avoid); }
+.finding.medium::before { background: var(--caution); }
+.finding.low::before { background: var(--risky); }
+
+.mint { font-size: 10.5px; color: var(--muted); margin-top: 9px; word-break: break-all; }
+
+.links { margin-top: 9px; display: flex; gap: 6px; flex-wrap: wrap; }
+.links a {
+  font-size: 11px; color: var(--accent); text-decoration: none;
+  border: 1px solid rgba(53,214,197,.22); border-radius: 6px; padding: 2px 8px;
+}
+.links a:hover { background: rgba(53,214,197,.08); }
+
+.card-actions { display: flex; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
+.card-actions button { padding: 7px 11px; font-size: 12.5px; }
+
+/* ---- Positionszeile -------------------------------------------------- */
+
+.pos {
+  display: flex; align-items: baseline; gap: 8px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px dashed var(--line);
+  font-size: 12.5px; font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+.pos .arrow { color: var(--muted); }
+.pos .pl { margin-left: auto; font-weight: 600; }
+.plus { color: var(--ok); }
+.minus { color: var(--avoid); }
+
+/* ---- Tabelle --------------------------------------------------------- */
+
+.wrap-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.trades { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.trades th {
+  text-align: right; color: var(--muted); font-weight: 500; font-size: 9.5px;
+  text-transform: uppercase; letter-spacing: .06em; padding: 7px 5px;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+table.trades th:first-child, table.trades td:first-child { text-align: left; }
+table.trades td { text-align: right; padding: 9px 5px; border-bottom: 1px solid var(--line-soft); }
+table.trades tr:last-child td { border-bottom: none; }
+table.trades tr.best td { background: rgba(53,214,197,.055); }
+.grp { font-weight: 600; font-family: var(--sans); }
+
+/* ---- Hinweise, Leerzustaende ----------------------------------------- */
+
+.note {
+  background: rgba(53,214,197,.06); border: 1px solid rgba(53,214,197,.16);
+  border-radius: 11px; padding: 11px 13px; font-size: 12.5px;
+  color: var(--text-dim); margin-bottom: 12px;
+}
+.note.warn { background: rgba(234,182,60,.06); border-color: rgba(234,182,60,.2); }
+.note b { color: var(--text); }
+
+.empty { color: var(--muted); text-align: center; padding: 46px 20px; font-size: 13.5px; line-height: 1.7; }
+
+/* Skelett statt "lade …" - es zeigt schon die Form dessen, was kommt. */
+.skel { background: var(--panel); border: 1px solid var(--line-soft);
+        border-left: 3px solid var(--line); border-radius: var(--r);
+        height: 108px; margin-bottom: 9px; position: relative; overflow: hidden; }
+.skel::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.035), transparent);
+  animation: sweep 1.4s ease-in-out infinite;
+}
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+pre.log {
+  background: var(--panel); border: 1px solid var(--line-soft);
+  border-radius: var(--r); padding: 13px; font-size: 11.5px;
+  color: var(--text-dim); overflow-x: auto; white-space: pre-wrap;
+  word-break: break-word; margin: 0; line-height: 1.65;
+}
+
+.spin {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; animation: rot .7s linear infinite; vertical-align: -1px;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+.row { display: flex; gap: 8px; }
+.row button { flex: none; }
+
+/* ---- Detailblatt ------------------------------------------------------ */
+
+.scrim {
+  position: fixed; inset: 0; z-index: 50; background: rgba(3,6,10,.66);
+  backdrop-filter: blur(3px); opacity: 0; pointer-events: none;
+  transition: opacity .22s ease;
+}
+.scrim.open { opacity: 1; pointer-events: auto; }
+
+.sheet {
+  position: fixed; z-index: 51; left: 0; right: 0; bottom: 0;
+  max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--panel); border-top: 1px solid var(--line);
+  border-radius: 20px 20px 0 0;
+  padding: 8px 16px calc(26px + env(safe-area-inset-bottom));
+  transform: translateY(101%); transition: transform .3s cubic-bezier(.2,.75,.3,1);
+  box-shadow: 0 -18px 50px -20px rgba(0,0,0,.85);
+}
+.sheet.open { transform: none; }
+.grip { width: 38px; height: 4px; border-radius: 2px; background: var(--line);
+        margin: 6px auto 14px; }
+@media (min-width: 680px) {
+  .sheet { left: 50%; right: auto; bottom: 0; width: 640px; transform: translate(-50%, 101%); }
+  .sheet.open { transform: translate(-50%, 0); }
+}
+
+.sheet h2 { margin: 0; font-size: 17px; }
+.sheet h3 {
+  margin: 20px 0 8px; font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::after { animation: none !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
 
 <header>
   <div class="brand">
-    <span class="dot" id="dot"></span>
-    <h1>XENO</h1>
+    <span class="pulse" id="pulse"><i></i></span>
+    <h1>Xeno</h1>
     <button id="bell" hidden onclick="askNotify()" title="Benachrichtigungen erlauben">🔔</button>
-    <button id="toggle" style="margin-left:auto" onclick="toggleWatcher()">…</button>
+    <svg class="ring" id="ring" viewBox="0 0 36 36" aria-hidden="true">
+      <circle class="bg" cx="18" cy="18" r="15"></circle>
+      <circle class="fg" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="94.2"></circle>
+    </svg>
+    <button id="toggle" onclick="toggleWatcher()">…</button>
   </div>
   <div class="sub" id="sub">verbinde …</div>
 </header>
@@ -194,24 +424,24 @@
   </nav>
 
   <div id="tab-tokens" class="tab">
-    <div id="tokens"><div class="empty">lade …</div></div>
+    <div id="tokens"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
   </div>
 
   <div id="tab-watchlist" class="tab" hidden>
     <div class="row" style="margin-bottom:12px">
       <input id="mint" placeholder="Mint-Adresse einfügen" autocapitalize="off" autocorrect="off" spellcheck="false">
       <button class="primary" onclick="addWatch()">Beobachten</button>
-      <button onclick="checkNow()">Jetzt prüfen</button>
+      <button onclick="checkNow()">Prüfen</button>
     </div>
-    <div id="watchlist"><div class="empty">lade …</div></div>
+    <div id="watchlist"><div class="skel"></div></div>
   </div>
 
   <div id="tab-alerts" class="tab" hidden>
-    <div id="alerts"><div class="empty">lade …</div></div>
+    <div id="alerts"><div class="skel"></div></div>
   </div>
 
   <div id="tab-trades" class="tab" hidden>
-    <div id="trades"><div class="empty">lade …</div></div>
+    <div id="trades"><div class="skel"></div></div>
   </div>
 
   <div id="tab-log" class="tab" hidden>
@@ -219,12 +449,19 @@
   </div>
 </main>
 
+<div class="scrim" id="scrim" onclick="closeSheet()"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="grip"></div>
+  <div id="sheet-body"></div>
+</div>
+
 <script>
 const token = new URLSearchParams(location.search).get('token') || '';
 let tab = 'tokens';
-// Papierpositionen nach Mint, damit die Tokenkarten sie mitzeigen können.
-let positions = {};
+let positions = {};      // Papierpositionen nach Mint
+let tokensByMint = {};   // fuer das Detailblatt
 let busy = false;
+let status = {};
 
 /* ---- Hinweise bei neuen Meldungen -------------------------------------
    Der Browser meldet nur, was seit dem letzten Blick dazugekommen ist.
@@ -234,7 +471,7 @@ let busy = false;
 const BASE_TITLE = 'XENO';
 const LOUD = new Set(['critical_change', 'degraded']);
 let lastAlertAt = 0;
-let primed = false;   // erste Abfrage legt nur den Ausgangsstand fest
+let primed = false;
 let flashTimer = null;
 let unseen = 0;
 
@@ -283,17 +520,13 @@ window.addEventListener('focus', clearFlash);
 
 function announce(alerts) {
   const newest = alerts.length ? Math.max(...alerts.map(a => a.at)) : 0;
-
-  // Beim ersten Laden nur den Ausgangsstand merken, sonst würde der ganze
-  // bisherige Verlauf auf einmal hereinpoltern.
   if (!primed) { primed = true; lastAlertAt = newest; return; }
 
   const fresh = alerts.filter(a => a.at > lastAlertAt);
   lastAlertAt = Math.max(lastAlertAt, newest);
   if (!fresh.length) return;
 
-  const loud = fresh.some(a => LOUD.has(a.kind));
-  beep(loud);
+  beep(fresh.some(a => LOUD.has(a.kind)));
 
   if ('Notification' in window && Notification.permission === 'granted') {
     fresh.slice(0, 3).forEach(a => {
@@ -310,6 +543,8 @@ function announce(alerts) {
   if (document.hidden) { unseen += fresh.length; flashTitle(); }
 }
 
+/* ---- Werkzeug ---------------------------------------------------------- */
+
 function api(path, options = {}) {
   const headers = Object.assign({'Content-Type': 'application/json'}, options.headers || {});
   if (token) headers['X-Auth-Token'] = token;
@@ -324,9 +559,22 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
 
 function money(v) {
   if (v == null) return '–';
+  if (v >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
   if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
   if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'k';
-  return '$' + Math.round(v);
+  return '$' + (v >= 1 ? Math.round(v) : v.toFixed(2));
+}
+
+function usd(v) {
+  if (v == null) return '–';
+  return (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2);
+}
+
+function pct(v) { return v == null ? '–' : (v >= 0 ? '+' : '') + v.toFixed(0) + '%'; }
+
+function num(v) {
+  if (v == null) return '–';
+  return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v));
 }
 
 function ago(ts) {
@@ -338,28 +586,59 @@ function ago(ts) {
   return (s / 86400).toFixed(1) + 'd';
 }
 
-function showTab(name) {
-  tab = name;
-  document.querySelectorAll('.tab').forEach(el => el.hidden = el.id !== 'tab-' + name);
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  refresh();
+function setStat(id, value) {
+  const el = document.getElementById(id);
+  const next = String(value ?? '–');
+  if (el.textContent === next) return;
+  el.textContent = next;
+  el.classList.remove('bump');
+  void el.offsetWidth;          // Neustart der Animation erzwingen
+  el.classList.add('bump');
 }
+
+/* ---- Sparkline ---------------------------------------------------------
+   Aus den ausgeduennten Schlusskursen, die die Strukturanalyse mitliefert.
+   Die Farbe kommt aus der Richtung: sie traegt Information, sie ist kein
+   Schmuck. Der Endpunkt ist betont, weil das der aktuelle Stand ist.      */
+
+function sparkline(series, animate) {
+  if (!series || series.length < 3) return '';
+  const w = 300, h = 42, pad = 3;
+  const lo = Math.min(...series), hi = Math.max(...series);
+  const span = (hi - lo) || 1;
+  const x = i => pad + (i / (series.length - 1)) * (w - pad * 2);
+  const y = v => pad + (1 - (v - lo) / span) * (h - pad * 2);
+
+  const points = series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const line = 'M' + points.join(' L');
+  const area = `${line} L${x(series.length - 1).toFixed(1)},${h} L${x(0).toFixed(1)},${h} Z`;
+  const rising = series[series.length - 1] >= series[0];
+  const colour = rising ? 'var(--ok)' : 'var(--avoid)';
+  const last = series.length - 1;
+
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <line class="grid" x1="0" y1="${(h / 2).toFixed(1)}" x2="${w}" y2="${(h / 2).toFixed(1)}"></line>
+    <path class="area" d="${area}" fill="${colour}"></path>
+    <path class="line${animate ? ' draw' : ''}" d="${line}" stroke="${colour}"></path>
+    <circle cx="${x(last).toFixed(1)}" cy="${y(series[last]).toFixed(1)}" fill="${colour}"></circle>
+  </svg>`;
+}
+
+/* ---- Bausteine ---------------------------------------------------------- */
 
 const TREND_LABEL = { up: 'AUFWÄRTS', down: 'ABWÄRTS', sideways: 'SEITWÄRTS' };
-
-function pct(v) {
-  if (v == null) return '–';
-  return (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
-}
-
-function num(v) {
-  if (v == null) return '–';
-  return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v));
-}
+const GROUP_ORDER = ['CALL', 'OK', 'CAUTION', 'RISKY', 'AVOID', 'UNKNOWN', 'CONTROL'];
+// Ein Name je Gruppe, überall derselbe. Intern heißt die Vergleichsgruppe
+// CONTROL – angezeigt wird nur „Abgelehnt", sonst stehen für dieselbe Sache
+// zwei Wörter auf einer Seite.
+const GROUP_LABEL = {
+  CALL: 'Calls', OK: 'OK', CAUTION: 'Mittel', RISKY: 'Riskant',
+  AVOID: 'Vermeiden', UNKNOWN: 'Unbekannt', CONTROL: 'Abgelehnt',
+};
 
 function trendChip(s) {
   if (!s || !TREND_LABEL[s.trend]) return '';
-  return `<span class="trend trend-${esc(s.trend)}">${TREND_LABEL[s.trend]}</span>`;
+  return `<span class="trend t-${esc(s.trend)}">${TREND_LABEL[s.trend]}</span>`;
 }
 
 // Marktdaten stammen aus der letzten Prüfung, nicht von jetzt. Deshalb steht
@@ -372,10 +651,10 @@ function figures(m, h) {
     <div><b>${money(m.volume_h1_usd)}</b><span>Vol 1h</span></div>
     <div><b>${money(m.liquidity_usd)}</b><span>Liquidität</span></div>
     <div><b${cls}>${pct(ch)}</b><span>1h</span></div>
-    <div><b>${num(m.buyers_h1)}</b><span>Käufer 1h</span></div>
-    <div><b>${num(m.trade_count_h1 ?? (m.buys_h1 + m.sells_h1))}</b><span>Trades 1h</span></div>
-    <div><b>${h.top10_pct != null ? h.top10_pct.toFixed(0) + '%' : '–'}</b><span>Top 10</span></div>
-    <div><b>${m.age_minutes != null ? num(m.age_minutes) + 'min' : '–'}</b><span>Alter</span></div>
+    <div><b>${num(m.buyers_h1)}</b><span>Käufer</span></div>
+    <div><b>${num(m.trade_count_h1 ?? (m.buys_h1 + m.sells_h1))}</b><span>Trades</span></div>
+    <div><b>${h && h.top10_pct != null ? h.top10_pct.toFixed(0) + '%' : '–'}</b><span>Top 10</span></div>
+    <div><b>${m.age_minutes != null ? (m.age_minutes >= 60 ? (m.age_minutes/60).toFixed(1)+'h' : Math.round(m.age_minutes)+'m') : '–'}</b><span>Alter</span></div>
   </div>`;
 }
 
@@ -386,11 +665,6 @@ function linkRow(m) {
   }
   (m.websites || []).forEach(u => out.push(`<a href="${esc(u)}" target="_blank" rel="noopener">web</a>`));
   return out.length ? `<div class="links">${out.join('')}</div>` : '';
-}
-
-function usd(v) {
-  if (v == null) return '–';
-  return (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2);
 }
 
 // Einstieg → jetzt. Ohne den Einstiegswert daneben sagt der aktuelle
@@ -407,59 +681,200 @@ function positionRow(p) {
   </div>`;
 }
 
-function tokenCard(t) {
+function tokenCard(t, index) {
   const m = t.market || {};
   const h = t.holders || {};
-  const findings = (t.top_findings || [])
+  const findings = (t.top_findings || []).slice(0, 2)
     .map(f => `<div class="finding ${esc(f.severity)}">${esc(f.message)}</div>`).join('');
 
-  return `<div class="card ${t.watchlisted ? 'wl' : ''}">
+  return `<div class="card tappable in v-${esc(t.verdict)} ${t.watchlisted ? 'wl' : ''}"
+       style="animation-delay:${Math.min(index, 8) * 34}ms"
+       onclick="openSheet('${esc(t.mint)}')">
     <div class="card-head">
-      <span class="badge ${esc(t.verdict)}">${esc(t.verdict)}</span>
+      <span class="badge b-${esc(t.verdict)}">${esc(t.verdict)}</span>
       <span class="sym">${esc(t.symbol || t.mint.slice(0, 10))}${trendChip(t.structure)}</span>
-      <span class="score">${t.score}/100</span>
+      <span class="score">${t.score}</span>
     </div>
+    ${sparkline((t.structure || {}).spark, true)}
     ${figures(m, h)}
     <div class="asof">Zahlen von der Prüfung vor ${esc(ago(t.last_checked))}</div>
     ${positionRow(positions[t.mint])}
-    ${linkRow(m)}
     ${findings}
-    <div class="mint">${esc(t.mint)}</div>
-    <div class="card-actions">
-      ${t.watchlisted
-        ? `<button class="danger" onclick="removeWatch('${esc(t.mint)}')">Entfernen</button>`
-        : `<button onclick="addWatch('${esc(t.mint)}')">Beobachten</button>`}
-      <button onclick="recheck('${esc(t.mint)}')">Neu prüfen</button>
-      <button onclick="window.open('https://dexscreener.com/solana/${esc(t.mint)}','_blank')">Chart</button>
-    </div>
   </div>`;
 }
 
+/* ---- Detailblatt --------------------------------------------------------- */
+
+function openSheet(mint) {
+  const t = tokensByMint[mint];
+  if (!t) return;
+  const m = t.market || {};
+  const p = positions[mint];
+  const groups = [['critical', 'Kritisch'], ['high', 'Schwer'], ['medium', 'Mittel'],
+                  ['low', 'Gering'], ['info', 'Unauffällig']];
+
+  api('/api/token/' + encodeURIComponent(mint)).then(d => {
+    const all = (d.report && d.report.findings) || t.top_findings || [];
+    const blocks = groups.map(([sev, label]) => {
+      const list = all.filter(f => f.severity === sev);
+      if (!list.length) return '';
+      return `<h3>${label}</h3>` + list.map(f =>
+        `<div class="finding ${esc(f.severity)}">${esc(f.message)}</div>`).join('');
+    }).join('');
+
+    document.getElementById('sheet-body').innerHTML = `
+      <div class="card-head">
+        <span class="badge b-${esc(t.verdict)}">${esc(t.verdict)}</span>
+        <h2 class="sym">${esc(t.symbol || mint.slice(0, 10))}${trendChip(t.structure)}</h2>
+        <span class="score">${t.score}/100</span>
+      </div>
+      ${sparkline((t.structure || {}).spark, true)}
+      ${figures(m, t.holders)}
+      ${p ? '<h3>Papierposition</h3>' + positionRow(p) : ''}
+      ${linkRow(m)}
+      ${blocks || '<h3>Befunde</h3><div class="finding info">keine</div>'}
+      <h3>Mint</h3>
+      <div class="mint">${esc(mint)}</div>
+      <div class="card-actions">
+        ${t.watchlisted
+          ? `<button class="danger" onclick="removeWatch('${esc(mint)}')">Entfernen</button>`
+          : `<button onclick="addWatch('${esc(mint)}')">Beobachten</button>`}
+        <button onclick="runCheck('${esc(mint)}')">Neu prüfen</button>
+        <button onclick="window.open('https://dexscreener.com/solana/${esc(mint)}','_blank')">Chart</button>
+        <button onclick="closeSheet()">Schließen</button>
+      </div>`;
+    document.getElementById('sheet').classList.add('open');
+    document.getElementById('scrim').classList.add('open');
+  }).catch(() => {});
+}
+
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
+  document.getElementById('scrim').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+/* ---- Reiter und Status ---------------------------------------------------- */
+
+function showTab(name) {
+  tab = name;
+  document.querySelectorAll('.tab').forEach(el => el.hidden = el.id !== 'tab-' + name);
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  refresh();
+}
+
+// Der Ring laeuft lokal weiter, damit er sich fluessig bewegt statt im
+// Fuenf-Sekunden-Takt der Abfrage zu springen.
+function paintRing() {
+  const circle = document.querySelector('#ring .fg');
+  if (!status.running || !status.interval) { circle.style.strokeDashoffset = 94.2; return; }
+  const since = status.last_cycle_at ? (Date.now() / 1000 - status.last_cycle_at) : 0;
+  const done = Math.max(0, Math.min(1, since / status.interval));
+  circle.style.strokeDashoffset = (94.2 * (1 - done)).toFixed(1);
+}
+
 function renderStatus(s) {
-  document.getElementById('dot').className = 'dot' + (s.running && !s.stopping ? ' on' : '');
+  status = s;
+  document.getElementById('pulse').className = 'pulse' + (s.running && !s.stopping ? ' on' : '');
   const btn = document.getElementById('toggle');
   if (!btn.disabled) btn.textContent = s.running ? 'Stopp' : 'Start';
-  const profil = s.profile ? ` · Profil ${s.profile.name}` : '';
-  document.getElementById('sub').textContent = s.stopping
-    ? 'hält an — laufende Prüfung wird noch beendet'
-    : s.running
-      ? `läuft · alle ${Math.round(s.interval)}s · ${s.cycles} Durchläufe${profil}`
-      : `gestoppt${profil}`;
-  document.getElementById('s-checked').textContent = s.checked_total;
-  document.getElementById('s-wl').textContent = s.watchlist;
-  document.getElementById('s-alerts').textContent = s.alerts;
+
+  const bits = [];
+  if (s.stopping) bits.push('hält an');
+  else if (s.running) bits.push(`läuft · <span class="num">${s.cycles}</span> Durchläufe`);
+  else bits.push('gestoppt');
+  if (s.profile) bits.push(esc(s.profile.name));
+  if (s.live && s.live.running) bits.push(`live <span class="num">${s.live.received}</span>`);
+  if (s.credits && s.credits.monthly_cap) {
+    const left = s.credits.remaining_today;
+    bits.push(`<span class="num">${left.toLocaleString('de')}</span> Credits heute`);
+  }
+  document.getElementById('sub').innerHTML = bits.join(' · ');
+  paintRing();
+
+  setStat('s-checked', s.checked_total);
+  setStat('s-wl', s.watchlist);
+  setStat('s-alerts', s.alerts);
 
   const notes = [];
   if (s.uses_public_rpc) {
     notes.push(`<div class="note warn">Öffentlicher RPC aktiv — Holder-Daten kommen von RugCheck.
-      Für eigene Chain-Abfrage einen kostenlosen Helius-Key in die <code>.env</code> eintragen.</div>`);
+      Für eigene Chain-Abfrage einen RPC-Zugang in die <b>.env</b> eintragen.</div>`);
   }
   if (!s.running && s.cycles === 0) {
     notes.push(`<div class="note">Der Watcher läuft noch nicht. Oben auf <b>Start</b> tippen —
-      danach sucht er alle 60 Sekunden nach neuen Token.</div>`);
+      danach sucht er laufend nach neuen Token.</div>`);
+  }
+  if (s.credits && s.credits.denied_today) {
+    notes.push(`<div class="note warn">Tagesbudget erreicht — <b>${s.credits.denied_today}</b>
+      Abfragen ausgelassen. Die betroffenen Prüfungen melden Wissenslücken.</div>`);
   }
   document.getElementById('notes').innerHTML = notes.join('');
 }
+
+/* ---- Trades ---------------------------------------------------------------- */
+
+function renderTrades(d) {
+  const box = document.getElementById('trades');
+  if (!d.available) { box.innerHTML = '<div class="empty">Papierhandel nicht aktiv.</div>'; return; }
+  const t = d.total || {};
+  if (!t.closed && !t.open) {
+    box.innerHTML = `<div class="empty">Noch keine Positionen.<br>
+      Der Bot simuliert jeden geprüften Token — nach ein paar Durchläufen steht hier etwas.</div>`;
+    return;
+  }
+
+  const groups = d.groups || {};
+  const rows = GROUP_ORDER.filter(g => groups[g]).map(g => [g, groups[g]]);
+  const closedRows = rows.filter(([, s]) => s.closed > 0);
+  const best = closedRows.length
+    ? closedRows.reduce((a, b) => (b[1].result_usd > a[1].result_usd ? b : a))[0]
+    : null;
+  const plCls = v => v == null ? '' : (v >= 0 ? 'plus' : 'minus');
+
+  box.innerHTML = `
+    <div class="stats">
+      <div class="stat"><b>${t.closed}</b><span>Abgeschl.</span></div>
+      <div class="stat"><b>${t.open}</b><span>Offen</span></div>
+      <div class="stat"><b>$${(t.turnover_usd || 0).toFixed(0)}</b><span>Umsatz</span></div>
+      <div class="stat"><b class="${plCls(t.result_usd)}">${usd(t.result_usd)}</b><span>Ergebnis</span></div>
+    </div>
+
+    <div class="note">100 $ je Token, raus bei 2x, bei 40 % Verlust oder nach 24 Stunden.
+      Kein echtes Geld.<br><b>Abgelehnt</b> sind Token, die schon der Vorfilter aussortiert
+      hat — drei zufällige je Durchlauf, nur zum Vergleich. Sie sind der Maßstab:
+      laufen sie besser als die geprüften, filtert der Bot falsch.</div>
+
+    <div class="wrap-x"><table class="trades">
+      <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
+      ${rows.map(([g, s]) => `<tr class="${g === best ? 'best' : ''}">
+        <td class="grp"><span class="badge b-${g}">${GROUP_LABEL[g] || g}</span></td>
+        <td>${s.closed}${s.open ? ' <span style="color:var(--muted)">+' + s.open + '</span>' : ''}</td>
+        <td>${s.closed ? s.win_rate.toFixed(0) + '%' : '–'}</td>
+        <td>${s.median_multiple != null ? s.median_multiple.toFixed(2) + 'x' : '–'}</td>
+        <td class="${plCls(s.result_usd)}">${s.closed ? usd(s.result_usd) : '–'}</td>
+      </tr>`).join('')}
+    </table></div>
+
+    ${best ? `<div class="note" style="margin-top:12px">Am besten gelaufen:
+      <b>${GROUP_LABEL[best] || best}</b>. Steht dort „Vermeiden" oder „Abgelehnt",
+      filtert der Bot in die falsche Richtung.</div>` : ''}
+
+    <h3 style="font-size:10px;color:var(--muted);margin:20px 0 8px;
+        text-transform:uppercase;letter-spacing:.1em">Positionen</h3>
+    ${(d.positions || []).slice(0, 60).map((p, i) => `<div class="card in v-${esc(p.group)}"
+        style="animation-delay:${Math.min(i, 8) * 34}ms">
+      <div class="card-head">
+        <span class="badge b-${esc(p.group)}">${esc(GROUP_LABEL[p.group] || p.group)}</span>
+        <span class="sym">${esc(p.symbol || p.mint.slice(0, 10))}${p.is_call ? ' 🎯' : ''}</span>
+        <span class="score">${p.open ? 'offen' : esc(p.exit_reason)}</span>
+      </div>
+      ${positionRow(p)}
+      <div class="asof">seit ${esc(ago(p.opened_at))}</div>
+    </div>`).join('')}`;
+}
+
+/* ---- Abfrageschleife -------------------------------------------------------- */
 
 function refresh() {
   api('/api/status').then(renderStatus).catch(err => {
@@ -468,16 +883,21 @@ function refresh() {
 
   if (tab === 'tokens' || tab === 'watchlist') {
     api('/api/tokens').then(d => {
-      document.getElementById('s-tokens').textContent = d.tokens.length;
+      tokensByMint = {};
+      d.tokens.forEach(t => { tokensByMint[t.mint] = t; });
+      setStat('s-tokens', d.tokens.length);
+
       const all = d.tokens.filter(t => t.check_count > 0);
       document.getElementById('tokens').innerHTML = all.length
         ? all.map(tokenCard).join('')
-        : '<div class="empty">Noch nichts geprüft.<br>Watcher starten oder oben eine Mint-Adresse prüfen.</div>';
+        : `<div class="empty">Noch nichts geprüft.<br>
+             Watcher starten oder in der Watchlist eine Mint-Adresse prüfen.</div>`;
 
       const wl = d.tokens.filter(t => t.watchlisted);
       document.getElementById('watchlist').innerHTML = wl.length
         ? wl.map(tokenCard).join('')
-        : '<div class="empty">Watchlist ist leer.<br>Mint-Adresse oben einfügen und auf Beobachten tippen.</div>';
+        : `<div class="empty">Watchlist ist leer.<br>
+             Mint-Adresse oben einfügen und auf Beobachten tippen.</div>`;
     }).catch(() => {});
   }
 
@@ -487,15 +907,16 @@ function refresh() {
     announce(d.alerts);
     if (tab === 'alerts') {
       document.getElementById('alerts').innerHTML = d.alerts.length
-        ? d.alerts.map(a => `<div class="card">
-            <span class="when">${ago(a.at)} her</span>
-            <div class="alert-kind kind-${esc(a.kind)}">${esc(a.title)}</div>
-            <div class="card-head" style="margin-top:6px">
-              <span class="badge ${esc(a.verdict)}">${esc(a.verdict)}</span>
+        ? d.alerts.map((a, i) => `<div class="card in v-${esc(a.verdict)}"
+              style="animation-delay:${Math.min(i, 8) * 34}ms">
+            <div class="card-head">
+              <span class="badge b-${a.kind === 'call' ? 'CALL' : esc(a.verdict)}">${
+                a.kind === 'call' ? '🎯 CALL' : esc(a.verdict)}</span>
               <span class="sym">${esc(a.symbol || a.mint.slice(0, 10))}${trendChip(a.structure)}</span>
+              <span class="score">${ago(a.at)}</span>
             </div>
+            ${sparkline((a.structure || {}).spark, false)}
             ${a.market ? figures(a.market, {}) : ''}
-            ${a.market ? linkRow(a.market) : ''}
             ${a.lines.slice(1).map(l => `<div class="finding info">${esc(l)}</div>`).join('')}
             <div class="mint">${esc(a.mint)}</div>
           </div>`).join('')
@@ -518,83 +939,7 @@ function refresh() {
   }
 }
 
-// Reihenfolge von gut nach schlecht. CALL steht vorn, weil der Vergleich
-// mit OK die eigentliche Frage beantwortet: bringen die strengen
-// Bedingungen etwas, oder sorgen sie nur für weniger Trades?
-const GROUP_ORDER = ['CALL', 'OK', 'CAUTION', 'RISKY', 'AVOID', 'UNKNOWN', 'CONTROL'];
-// Ein Name je Gruppe, überall derselbe. Intern heißt die Vergleichsgruppe
-// CONTROL – das ist der gespeicherte Wert und bleibt so; angezeigt wird
-// aber nur „Abgelehnt", sonst stehen für dieselbe Sache zwei Wörter auf
-// einer Seite.
-const GROUP_LABEL = {
-  CALL: 'Calls', OK: 'OK', CAUTION: 'Mittel', RISKY: 'Riskant',
-  AVOID: 'Vermeiden', UNKNOWN: 'Unbekannt', CONTROL: 'Abgelehnt',
-};
-
-function renderTrades(d) {
-  const box = document.getElementById('trades');
-  if (!d.available) {
-    box.innerHTML = '<div class="empty">Papierhandel nicht aktiv.</div>';
-    return;
-  }
-  const t = d.total || {};
-  if (!t.closed && !t.open) {
-    box.innerHTML = '<div class="empty">Noch keine Positionen. '
-      + 'Der Bot simuliert jeden geprüften Token — nach ein paar Durchläufen steht hier etwas.</div>';
-    return;
-  }
-
-  const groups = d.groups || {};
-  const rows = GROUP_ORDER.filter(g => groups[g]).map(g => [g, groups[g]]);
-  // Beste Gruppe hervorheben – das ist die Zeile, wegen der es diese Seite gibt.
-  const closedRows = rows.filter(([, s]) => s.closed > 0);
-  const best = closedRows.length
-    ? closedRows.reduce((a, b) => (b[1].result_usd > a[1].result_usd ? b : a))[0]
-    : null;
-
-  const plCls = v => v == null ? '' : (v >= 0 ? 'plus' : 'minus');
-
-  box.innerHTML = `
-    <div class="stats">
-      <div class="stat"><b>${t.closed}</b><span>Abgeschl.</span></div>
-      <div class="stat"><b>${t.open}</b><span>Offen</span></div>
-      <div class="stat"><b>$${(t.turnover_usd || 0).toFixed(0)}</b><span>Umsatz</span></div>
-      <div class="stat"><b class="${plCls(t.result_usd)}">${usd(t.result_usd)}</b><span>Ergebnis</span></div>
-    </div>
-
-    <div class="note">Simuliert: 100 $ je Token, raus bei 2x, bei 40 % Verlust
-    oder nach 24 Stunden. Kein echtes Geld.<br>
-    <b>Abgelehnt</b> sind Token, die schon der Vorfilter aussortiert hat — drei
-    zufällige je Durchlauf, nur zum Vergleich mitgemessen. Sie sind der
-    Maßstab: laufen sie besser als die geprüften, filtert der Bot falsch.</div>
-
-    <div class="wrap-x"><table class="trades">
-      <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
-      ${rows.map(([g, s]) => `<tr class="${g === best ? 'best' : ''}">
-        <td class="grp ${g}">${GROUP_LABEL[g] || g}</td>
-        <td>${s.closed}${s.open ? ' <span class="arrow">+' + s.open + '</span>' : ''}</td>
-        <td>${s.closed ? s.win_rate.toFixed(0) + '%' : '–'}</td>
-        <td>${s.median_multiple != null ? s.median_multiple.toFixed(2) + 'x' : '–'}</td>
-        <td class="${plCls(s.result_usd)}">${s.closed ? usd(s.result_usd) : '–'}</td>
-      </tr>`).join('')}
-    </table></div>
-
-    ${best ? `<div class="note" style="margin-top:12px">Am besten gelaufen:
-      <b>${GROUP_LABEL[best] || best}</b>. Steht dort „Vermeiden" oder „Abgelehnt“,
-      filtert der Bot in die falsche Richtung.</div>` : ''}
-
-    <h3 style="font-size:13px;color:var(--muted);margin:18px 0 8px;font-weight:500">Positionen</h3>
-    ${(d.positions || []).slice(0, 60).map(p => `<div class="card">
-      <div class="card-head">
-        <span class="badge ${esc(p.group)}">${esc(GROUP_LABEL[p.group] || p.group)}</span>
-        <span class="sym">${esc(p.symbol || p.mint.slice(0, 10))}${p.is_call ? ' 🎯' : ''}</span>
-        <span class="score">${p.open ? 'offen' : esc(p.exit_reason)}</span>
-      </div>
-      ${positionRow(p)}
-      <div class="asof">seit ${esc(ago(p.opened_at))}</div>
-    </div>`).join('')}
-  `;
-}
+/* ---- Aktionen ---------------------------------------------------------------- */
 
 function toggleWatcher() {
   const btn = document.getElementById('toggle');
@@ -611,35 +956,41 @@ function addWatch(mint) {
   const value = mint || document.getElementById('mint').value.trim();
   if (!value) return;
   api('/api/watchlist', {method: 'POST', body: JSON.stringify({mint: value})})
-    .then(() => { document.getElementById('mint').value = ''; refresh(); })
+    .then(() => { document.getElementById('mint').value = ''; closeSheet(); refresh(); })
     .catch(err => alert('Fehler: ' + err));
 }
 
 function removeWatch(mint) {
   api('/api/watchlist/' + encodeURIComponent(mint), {method: 'DELETE'})
-    .then(refresh).catch(err => alert('Fehler: ' + err));
+    .then(() => { closeSheet(); refresh(); })
+    .catch(err => alert('Fehler: ' + err));
 }
 
 function runCheck(mint) {
   if (busy) return;
   busy = true;
-  const previous = document.getElementById('sub').textContent;
-  document.getElementById('sub').innerHTML = '<span class="spin"></span> prüfe ' + esc(mint.slice(0, 10)) + ' …';
+  closeSheet();
+  const sub = document.getElementById('sub');
+  const previous = sub.innerHTML;
+  sub.innerHTML = '<span class="spin"></span> prüfe ' + esc(mint.slice(0, 10)) + ' …';
   api('/api/check', {method: 'POST', body: JSON.stringify({mint})})
-    .then(r => { document.getElementById('mint').value = ''; alert(`${r.symbol || 'Token'}: ${r.verdict} (${r.score}/100)`); })
+    .then(r => {
+      document.getElementById('mint').value = '';
+      alert(`${r.symbol || 'Token'}: ${r.verdict} (${r.score}/100)`);
+    })
     .catch(err => alert('Fehler: ' + err))
-    .finally(() => { busy = false; document.getElementById('sub').textContent = previous; refresh(); });
+    .finally(() => { busy = false; sub.innerHTML = previous; refresh(); });
 }
 
 function checkNow() {
   const value = document.getElementById('mint').value.trim();
   if (value) runCheck(value);
 }
-const recheck = runCheck;
 
 updateBell();
 refresh();
 setInterval(refresh, 5000);
+setInterval(paintRing, 1000);
 </script>
 </body>
 </html>

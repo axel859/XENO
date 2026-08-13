@@ -524,8 +524,32 @@ python3 -m xeno serve
 den Watcher gleich mit. Solange das Fenster offen ist, läuft der Bot.
 
 Zu sehen sind: Status und Start/Stopp des Watchers, alle geprüften Token mit
-Ampel und Punktzahl, die Watchlist, die letzten Meldungen und ein Log. Token
-lassen sich direkt per Mint-Adresse prüfen oder auf die Watchlist setzen.
+Ampel und Punktzahl, die Watchlist, die letzten Meldungen, die Trades und ein
+Log. Token lassen sich direkt per Mint-Adresse prüfen oder auf die Watchlist
+setzen. Ein Tipp auf eine Karte öffnet ein Blatt mit **allen** Befunden nach
+Schweregrad, dem Kursverlauf und den Aktionen.
+
+### Zur Gestaltung
+
+Ein Werkzeug wird gescannt, nicht gelesen — entsprechend ist es gebaut:
+
+**Jede Zahl steht in Mono mit Tabellenziffern.** Das Ding zeigt fast nur
+Zahlen, und untereinander vergleichbar sind sie nur, wenn die Ziffern gleich
+breit sind. Ohne das springt bei jeder Aktualisierung die halbe Karte.
+
+**Der Akzent ist kühl, die Urteilsfarben sind warm.** So kollidiert die Farbe
+für „wichtig" nie mit der für „gefährlich". Das Urteil trägt außerdem die
+farbige Kante links an der Karte — beim Durchscrollen liest man sie, ohne die
+Plakette zu entziffern.
+
+**Bewegung nur, wo sie etwas mitteilt.** Der Puls neben dem Namen sagt „ich
+arbeite noch", auch wenn seit Minuten nichts passiert ist. Der Ring oben
+rechts zeigt, wann der nächste Durchlauf kommt. Zahlen leuchten kurz auf, wenn
+sie sich ändern — sonst übersieht man es bei einer Anzeige, die sich alle fünf
+Sekunden selbst neu zeichnet. `prefers-reduced-motion` schaltet alles davon ab.
+
+**Und ein Chart.** Ein Werkzeug, das Charts bewertet, sollte auch einen zeigen
+können: jede Karte trägt den Kursverlauf als Linie, eingefärbt nach Richtung.
 
 ### Vom Handy aus
 
