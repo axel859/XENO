@@ -257,6 +257,34 @@ class JsonlNotifier:
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+#: Anlaesse, die es wert sind, jemanden zu unterbrechen.
+#:
+#: Alles andere - ein neuer Kandidat, eine Verbesserung, eine
+#: Verschlechterung ohne kritischen Befund - ist Beobachtung, keine
+#: Nachricht. Das steht weiterhin vollstaendig in der Oberflaeche, macht
+#: aber keinen Ton und kein Fenster auf. Ohne diese Trennung kamen in einer
+#: Nacht ueber hundert Meldungen an, und wer hundert Meldungen bekommt,
+#: liest keine davon - auch die drei nicht, auf die es ankam.
+INTERRUPTING = frozenset({AlertKind.CALL, AlertKind.CRITICAL_CHANGE, AlertKind.WAKE})
+
+
+class OnlyImportant:
+    """Laesst nur die Anlaesse durch, die eine Unterbrechung rechtfertigen.
+
+    Gedacht fuer Telegram und Systemmeldungen. Die Oberflaeche haengt
+    bewusst *nicht* dahinter: dort ist eine lange Liste kein Problem,
+    sondern der Zweck.
+    """
+
+    def __init__(self, inner: Notifier, kinds=INTERRUPTING) -> None:
+        self.inner = inner
+        self.kinds = frozenset(kinds)
+
+    def send(self, alert: Alert) -> None:
+        if alert.kind in self.kinds:
+            self.inner.send(alert)
+
+
 class MultiNotifier:
     """Verteilt an mehrere Kanaele. Ein defekter Kanal stoppt die anderen nicht."""
 

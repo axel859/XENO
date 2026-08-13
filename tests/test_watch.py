@@ -472,3 +472,132 @@ class TestSilentFailures:
 
         assert seen["pages"] == EARLY.watch_pages
         assert seen["pages"] < EARLY.pages
+
+
+class TestMeldungsfilter:
+    """Was eine Unterbrechung wert ist - und was nur in die Liste gehoert.
+
+    In einer Nacht kamen ueber hundert Meldungen an. Wer hundert bekommt,
+    liest keine davon - auch die drei nicht, auf die es ankam.
+    """
+
+    def make(self, kind):
+        from xeno.notify import Alert
+
+        return Alert(kind=kind, report=make_report())
+
+    def test_a_call_gets_through(self):
+        from xeno.notify import AlertKind, OnlyImportant
+
+        inner = CollectingNotifier()
+        OnlyImportant(inner).send(self.make(AlertKind.CALL))
+        assert len(inner.alerts) == 1
+
+    def test_a_critical_change_gets_through(self):
+        from xeno.notify import AlertKind, OnlyImportant
+
+        inner = CollectingNotifier()
+        OnlyImportant(inner).send(self.make(AlertKind.CRITICAL_CHANGE))
+        assert len(inner.alerts) == 1
+
+    def test_a_wake_up_gets_through(self):
+        from xeno.notify import AlertKind, OnlyImportant
+
+        inner = CollectingNotifier()
+        OnlyImportant(inner).send(self.make(AlertKind.WAKE))
+        assert len(inner.alerts) == 1
+
+    def test_an_ordinary_find_stays_quiet(self):
+        """Der haeufigste Anlass - und der, der die Nacht geflutet hat."""
+        from xeno.notify import AlertKind, OnlyImportant
+
+        inner = CollectingNotifier()
+        OnlyImportant(inner).send(self.make(AlertKind.NEW))
+        OnlyImportant(inner).send(self.make(AlertKind.IMPROVED))
+        OnlyImportant(inner).send(self.make(AlertKind.DEGRADED))
+        assert inner.alerts == []
+
+    def test_the_dashboard_still_sees_everything(self, tmp_path):
+        """Der Filter haengt vor Telegram und Systemmeldungen, nicht vor
+        der Oberflaeche - dort ist eine lange Liste der Zweck."""
+        from xeno.config import Settings
+        from xeno.notify import AlertKind
+        from xeno.server import build_server
+        from xeno.watchstate import WatchState
+
+        httpd, app, watcher_thread = build_server(
+            host="127.0.0.1", port=0, settings=Settings(),
+            state=WatchState(tmp_path / "s.json"), use_telegram=False,
+        )
+        try:
+            watcher_thread.watcher.notifier.send(self.make(AlertKind.NEW))
+            assert len(app.alerts) == 1
+        finally:
+            httpd.server_close()
+
+
+class TestMarktdatenImZustand:
+    """Die Anzeigewerte muessen den Bericht ueberleben.
+
+    Die vollstaendigen Berichte liegen nur im Speicher und fallen nach 300
+    Eintraegen hinten heraus - erst recht bei einem Neustart. Vorher stand
+    auf jeder aelteren Karte im Dashboard nur noch "-", obwohl der Token
+    laengst geprueft war.
+    """
+
+    def test_the_numbers_are_kept(self, tmp_path):
+        state = WatchState(tmp_path / "s.json")
+        report = make_report()
+        report.candidate = make_candidate()
+        state.record(report)
+
+        market = state.get(MINT).market
+        assert market["liquidity_usd"] == report.candidate.liquidity_usd
+        assert market["volume_h1_usd"] == report.candidate.volume_h1_usd
+
+    def test_they_survive_a_restart(self, tmp_path):
+        path = tmp_path / "s.json"
+        state = WatchState(path)
+        report = make_report()
+        report.candidate = make_candidate()
+        state.record(report)
+        state.save()
+
+        assert WatchState(path).get(MINT).market["liquidity_usd"] is not None
+
+    def test_only_the_display_values_are_kept(self, tmp_path):
+        """Das steht fuer jeden je gesehenen Token in der Datei - der ganze
+        Kandidat waere ueber Wochen zu viel."""
+        from xeno.watchstate import MARKET_KEEP
+
+        state = WatchState(tmp_path / "s.json")
+        report = make_report()
+        report.candidate = make_candidate()
+        state.record(report)
+        assert set(state.get(MINT).market) <= set(MARKET_KEEP)
+
+    def test_a_token_without_market_data_stays_empty(self, tmp_path):
+        state = WatchState(tmp_path / "s.json")
+        state.record(make_report())
+        assert state.get(MINT).market == {}
+
+    def test_the_dashboard_falls_back_to_them(self, tmp_path):
+        """Ohne Bericht im Speicher liefert die API trotzdem Zahlen."""
+        from xeno.config import Settings
+        from xeno.server import build_server
+
+        state = WatchState(tmp_path / "s.json")
+        report = make_report()
+        report.candidate = make_candidate()
+        state.record(report)
+
+        httpd, app, _thread = build_server(
+            host="127.0.0.1", port=0, settings=Settings(), state=state,
+            use_telegram=False,
+        )
+        try:
+            handler = httpd.RequestHandlerClass
+            entry = next(e for e in handler._tokens(handler) if e["mint"] == MINT)
+            assert entry["market"]["liquidity_usd"] is not None
+        finally:
+            httpd.server_close()

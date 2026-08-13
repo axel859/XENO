@@ -92,6 +92,15 @@ class TokenState:
     #: Wann zuletzt ein Aufwachen gemeldet wurde. Sperrfrist gegen
     #: Dauermeldungen, solange eine Bewegung anhaelt.
     woke_at: float = 0.0
+    #: Marktstand zum Zeitpunkt der letzten Pruefung, klein gehalten.
+    #:
+    #: Die vollstaendigen Berichte liegen nur im Speicher und fallen nach
+    #: 300 Eintraegen hinten heraus - erst recht bei einem Neustart. Ohne
+    #: diese Kopie standen auf jeder aelteren Karte im Dashboard nur noch
+    #: Striche, obwohl der Token laengst geprueft war.
+    market: dict[str, Any] = field(default_factory=dict)
+    #: Verteilung der groessten Halter, ebenfalls nur die Anzeigewerte.
+    holders: dict[str, Any] = field(default_factory=dict)
 
     # -- Nachverfolgung des Kursverlaufs ---------------------------------
     #: Zeitpunkt und Kurs beim ersten Deep-Check. Alles Weitere wird daran
@@ -134,6 +143,38 @@ class TokenState:
 
 #: Wiederholungsabstand nach Alter des Pools: (Alter in Minuten, Abstand in Sekunden).
 #: Je juenger ein Token, desto schneller aendert sich sein Zustand.
+#: Anzeigewerte, die je Token dauerhaft aufgehoben werden. Bewusst eine
+#: kurze Liste und nicht der ganze Kandidat: das hier steht fuer jeden je
+#: gesehenen Token in der Zustandsdatei, und die soll ueber Wochen
+#: handlich bleiben.
+MARKET_KEEP = (
+    "price_usd",
+    "liquidity_usd",
+    "volume_h1_usd",
+    "volume_h24_usd",
+    "price_change_h1_pct",
+    "buyers_h1",
+    "buys_h1",
+    "sells_h1",
+    "age_minutes",
+    "mcap_usd",
+    "socials",
+    "websites",
+)
+
+
+def _market_snapshot(candidate) -> dict[str, Any]:
+    """Die Anzeigewerte eines Kandidaten, klein gehalten.
+
+    ``age_minutes`` wird bewusst als Wert der Pruefung festgehalten und
+    nicht spaeter neu gerechnet: die Karte schreibt ohnehin darunter, von
+    wann die Zahlen stammen. Ein Alter, das mitlaeuft, waehrend alles
+    daneben stehenbleibt, waere die unehrlichere Variante.
+    """
+    data = candidate.to_dict()
+    return {key: data[key] for key in MARKET_KEEP if data.get(key) not in (None, "")}
+
+
 RECHECK_TIERS: list[tuple[float, float]] = [
     (60, 5 * 60),          # erste Stunde: alle 5 Minuten
     (6 * 60, 15 * 60),     # bis 6h: viertelstuendlich
@@ -286,6 +327,14 @@ class WatchState:
         candidate = report.candidate
         if candidate and candidate.created_at:
             state.created_at = candidate.created_at.timestamp()
+        if candidate is not None:
+            state.market = _market_snapshot(candidate)
+        if report.distribution is not None:
+            state.holders = {
+                "top10_pct": report.distribution.top10_pct,
+                "largest_pct": report.distribution.largest_pct,
+                "holder_count": report.distribution.holder_count,
+            }
 
         # Ausgangswerte nur einmal festhalten - beim ersten Urteil. Spaetere
         # Pruefungen duerfen den Bezugspunkt nicht verschieben, sonst misst

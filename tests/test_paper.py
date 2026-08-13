@@ -380,3 +380,71 @@ def test_decide_needs_a_sane_price():
     position = Position(mint=MINT, opened_at=NOW, entry_price=1.0)
     assert position.decide(0.0, NOW + 60) == ""
     assert Position(mint=MINT).decide(1.0, NOW) == ""
+
+
+class TestKaputterEinstieg:
+    """Der Fall, der die Bilanz auf 20,5 Millionen Dollar gehoben hat.
+
+    Echt aufgetreten: 20.800 USD Umsatz, angeblich +20.595.246 USD
+    Gewinn. Bei einer Ausstiegsregel, die bei 2x verkauft, ist ein
+    Vielfaches von zweihunderttausend rechnerisch unmoeglich - da war
+    nicht der Kurs so hoch, sondern der Einstiegswert nahe null.
+    """
+
+    def broken_position(self) -> Position:
+        position = Position(
+            mint="kaputt", symbol="X", group="CONTROL",
+            entry_price=1e-12, opened_at=1.0,
+        )
+        position.exit_price = 2.06e-7
+        position.closed_at = 2.0
+        position.exit_reason = "ziel"
+        return position
+
+    def good_position(self, multiple: float = 2.0) -> Position:
+        position = Position(
+            mint="gut", symbol="Y", group="OK", entry_price=1.0, opened_at=1.0
+        )
+        position.exit_price = multiple
+        position.closed_at = 2.0
+        position.exit_reason = "ziel"
+        return position
+
+    def test_it_is_recognised(self, tmp_path):
+        assert self.broken_position().broken
+        assert not self.good_position().broken
+
+    def test_it_is_kept_out_of_the_balance(self, tmp_path):
+        book = PaperBook(tmp_path / "paper.json")
+        book.positions.extend([self.good_position(), self.broken_position()])
+        result = book.summary()
+        assert result["result_usd"] == 100.0     # nur die echte Position
+        assert result["broken"] == 1
+        assert result["closed"] == 1
+
+    def test_it_does_not_poison_the_group_comparison(self, tmp_path):
+        """Eine einzige kaputte Position machte jede Gruppe daneben
+        unlesbar - genau das ist die Auswertung, um die es geht."""
+        book = PaperBook(tmp_path / "paper.json")
+        book.positions.extend([self.good_position(), self.broken_position()])
+        groups = book.by_group()
+        assert groups["CONTROL"]["result_usd"] == 0.0
+        assert groups["CONTROL"]["broken"] == 1
+        assert groups["OK"]["result_usd"] == 100.0
+
+    def test_it_is_not_counted_as_a_win(self, tmp_path):
+        book = PaperBook(tmp_path / "paper.json")
+        book.positions.append(self.broken_position())
+        assert book.summary()["wins"] == 0
+
+    def test_a_real_double_survives(self, tmp_path):
+        """Die Grenze darf keine echten Treffer wegwerfen."""
+        book = PaperBook(tmp_path / "paper.json")
+        book.positions.append(self.good_position(2.4))
+        assert book.summary()["broken"] == 0
+        assert book.summary()["result_usd"] == 140.0
+
+    def test_the_hit_rate_ignores_it(self, tmp_path):
+        book = PaperBook(tmp_path / "paper.json")
+        book.positions.extend([self.good_position(), self.broken_position()])
+        assert "von 1 abgeschlossenen" in book.hit_rate_text()

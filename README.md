@@ -722,6 +722,17 @@ laufen bereits diese drei:
 | Telegram | überall | Bot anlegen, siehe unten |
 | JSON-Datei | zum späteren Auswerten | `--log-file` |
 
+**Nicht jede Meldung unterbricht.** Ton, Systemmeldung und Telegram bekommen nur
+drei Anlässe: ein **Call**, eine **kritische Änderung** und ein **Aufwacher**.
+Alles andere — ein neuer Kandidat, eine Verbesserung, eine Verschlechterung ohne
+kritischen Befund — steht weiter vollständig in der Oberfläche, macht aber
+keinen Ton.
+
+Der Grund steht in einer echten Nacht: über hundert Meldungen. Wer hundert
+bekommt, liest keine davon — auch die drei nicht, auf die es ankam. Die Liste im
+Dashboard hängt bewusst **nicht** hinter diesem Filter; dort ist eine lange
+Liste kein Problem, sondern der Zweck.
+
 ```bash
 python3 -m xeno serve --only-important   # nur Verschlechterungen und neue kritische Befunde
 python3 -m xeno serve --no-sound         # still
@@ -972,6 +983,19 @@ einen Neustart.
 Bleibt eine Abfrage ohne jede Antwort, meldet der Durchlauf das als Lücke statt
 als Ruhe. „Es konnte niemand nachsehen" ist etwas anderes als „nichts passiert".
 
+### Kaputte Einstiegskurse
+
+Eine echte Bilanz sah so aus: **20.800 $ Umsatz, angeblich +20.595.246 $
+Gewinn.** Bei einer Ausstiegsregel, die bei 2x verkauft, ist ein Vielfaches von
+zweihunderttausend rechnerisch unmöglich — da war nicht der Kurs so hoch,
+sondern der Einstiegswert nahe null. Das passiert bei sekundenalten Pools, für
+die die Kursquelle noch keinen belastbaren Wert hat.
+
+Positionen mit einem Vielfachen über 1000x fliegen deshalb aus der Bilanz und
+werden **gezählt** statt verschwiegen. Eine einzige davon machte jede
+Gruppenauswertung daneben unlesbar — und das ist genau die Auswertung, um die
+es hier geht.
+
 ## Die Vergleichsgruppe — Fehlalarme sichtbar machen
 
 Bisher verschwanden die im Vorfilter abgelehnten Token spurlos. Von 132
@@ -1182,7 +1206,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 634 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 650 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

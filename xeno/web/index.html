@@ -485,7 +485,11 @@ let status = {};
    Anzahl - sonst gaebe es keine Meldung mehr, sobald der Ringpuffer voll
    ist und alte Eintraege hinten herausfallen.                            */
 const BASE_TITLE = 'XENO';
-const LOUD = new Set(['critical_change', 'degraded']);
+// Ton und Systemmeldung nur bei Anlässen, die eine Unterbrechung wert sind.
+// Alles andere steht weiter in der Liste – es klingelt nur nicht. Über hundert
+// Meldungen in einer Nacht heißt: keine davon wird gelesen.
+const INTERRUPTING = new Set(['call', 'critical_change', 'wake']);
+const LOUD = new Set(['critical_change']);
 let lastAlertAt = 0;
 let primed = false;
 let flashTimer = null;
@@ -538,8 +542,9 @@ function announce(alerts) {
   const newest = alerts.length ? Math.max(...alerts.map(a => a.at)) : 0;
   if (!primed) { primed = true; lastAlertAt = newest; return; }
 
-  const fresh = alerts.filter(a => a.at > lastAlertAt);
+  const alle = alerts.filter(a => a.at > lastAlertAt);
   lastAlertAt = Math.max(lastAlertAt, newest);
+  const fresh = alle.filter(a => INTERRUPTING.has(a.kind));
   if (!fresh.length) return;
 
   beep(fresh.some(a => LOUD.has(a.kind)));
@@ -673,6 +678,15 @@ function trendChip(s) {
   return `<span class="trend t-${esc(s.trend)}">${TREND_LABEL[s.trend]}</span>`;
 }
 
+// Käufe plus Verkäufe. Sind beide unbekannt, ist die Zahl unbekannt – nicht
+// null. Vorher stand hier `m.buys_h1 + m.sells_h1`, und bei einer Karte ohne
+// Marktdaten ergab `undefined + undefined` ein „NaN" in der Anzeige.
+function trades(m) {
+  if (m.trade_count_h1 != null) return m.trade_count_h1;
+  if (m.buys_h1 == null && m.sells_h1 == null) return null;
+  return (m.buys_h1 || 0) + (m.sells_h1 || 0);
+}
+
 // Marktdaten stammen aus der letzten Prüfung, nicht von jetzt. Deshalb steht
 // das Alter direkt darunter – sonst liest man einen alten Wert als Live-Kurs.
 function figures(m, h) {
@@ -684,7 +698,7 @@ function figures(m, h) {
     <div><b>${money(m.liquidity_usd)}</b><span>Liquidität</span></div>
     <div><b${cls}>${pct(ch)}</b><span>1h</span></div>
     <div><b>${num(m.buyers_h1)}</b><span>Käufer</span></div>
-    <div><b>${num(m.trade_count_h1 ?? (m.buys_h1 + m.sells_h1))}</b><span>Trades</span></div>
+    <div><b>${num(trades(m))}</b><span>Trades</span></div>
     <div><b>${h && h.top10_pct != null ? h.top10_pct.toFixed(0) + '%' : '–'}</b><span>Top 10</span></div>
     <div><b>${age(m.age_minutes)}</b><span>Alter</span></div>
   </div>`;

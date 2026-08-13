@@ -31,6 +31,20 @@ _ENV_KEYS = (
 
 
 @pytest.fixture(autouse=True)
+def isolated_data_dir(tmp_path_factory, monkeypatch):
+    """Leitet den Datenordner in ein Testverzeichnis um.
+
+    Ohne das greifen Bausteine, die ihren Pfad selbst bestimmen, auf die
+    echten Dateien des Benutzers zu: ``PaperBook()``, ``CreditMeter()`` und
+    ``OriginCache()`` nehmen ohne Pfadangabe ``data_dir()``. Ein Test las
+    dadurch das gespeicherte Papierbuch mit und behauptete "von 5
+    abgeschlossenen Calls" - eine Zahl, die nirgends im Test stand. Beim
+    Schreiben waere daraus echter Datenverlust geworden.
+    """
+    monkeypatch.setenv("XENO_DATA_DIR", str(tmp_path_factory.mktemp("xeno-data")))
+
+
+@pytest.fixture(autouse=True)
 def isolated_environment():
     """Trennt jeden Test von der Umgebung - davor und danach.
 

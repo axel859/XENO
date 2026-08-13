@@ -33,7 +33,13 @@ from .config import Settings
 from .discovery import Discovery
 from .known import looks_like_mint as _looks_like_mint
 from .models import RiskReport, TokenCandidate
-from .notify import Alert, ConsoleNotifier, MultiNotifier, TelegramNotifier
+from .notify import (
+    Alert,
+    ConsoleNotifier,
+    MultiNotifier,
+    OnlyImportant,
+    TelegramNotifier,
+)
 from .watcher import Watcher
 from .watchstate import WatchState
 
@@ -433,12 +439,15 @@ class Handler(BaseHTTPRequestHandler):
         with self.app.lock:
             reports = dict(self.app.reports)
         for entry in entries:
+            # Ohne frischen Bericht bleiben die im Zustand gesicherten
+            # Anzeigewerte stehen. Vorher stand auf jeder Karte, deren
+            # Bericht aus dem Speicher gefallen war, nur noch "-".
             report = reports.get(entry["mint"])
             if report:
                 market = report.get("market") or {}
                 entry["market"] = market
                 entry["momentum"] = market.get("momentum")
-                entry["holders"] = report.get("holders")
+                entry["holders"] = report.get("holders") or entry.get("holders")
                 entry["structure"] = report.get("structure")
                 entry["top_findings"] = [
                     f
@@ -521,6 +530,10 @@ class Handler(BaseHTTPRequestHandler):
 
         positions = []
         for position in sorted(book.positions, key=lambda p: p.opened_at, reverse=True):
+            # Kaputter Einstiegskurs - gehoert nicht in die Liste, sonst
+            # steht dort eine Position mit 205.939x daneben.
+            if position.broken:
+                continue
             # Der zuletzt gesehene Kurs als Rueckfall: fuer die Token der
             # Vergleichsgruppe gibt es nie einen Bericht, aus dem sich ein
             # frischerer ablesen liesse.
@@ -620,7 +633,12 @@ def build_server(
         def send(self, alert: Alert) -> None:
             app.add_alert(alert)
 
-    notifier = MultiNotifier([*channels, Collector()], on_error=app.log)
+    # Die Oberflaeche bekommt alles, Telegram und Systemmeldungen nur das,
+    # was eine Unterbrechung wert ist. Vorher gingen ueber hundert Meldungen
+    # pro Nacht raus - und wer hundert bekommt, liest keine davon.
+    notifier = MultiNotifier(
+        [*(OnlyImportant(c) for c in channels), Collector()], on_error=app.log
+    )
     analyzer = TokenAnalyzer(settings)
     watcher = Watcher(
         settings,

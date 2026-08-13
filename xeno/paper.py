@@ -115,6 +115,26 @@ class Position:
             return self.exit_price / self.entry_price
         return self.peak_price / self.entry_price if self.peak_price else None
 
+    @property
+    def broken(self) -> bool:
+        """Ob der Einstiegskurs unbrauchbar war.
+
+        Aufgefallen an einer echten Bilanz: 20.800 USD Umsatz, angeblich
+        20.595.246 USD Gewinn. Ein Vielfaches von zweihunderttausend ist bei
+        einer Ausstiegsregel, die bei 2x verkauft, rechnerisch unmoeglich -
+        da war nicht der Kurs so hoch, sondern der Einstiegswert nahe null.
+        Das passiert bei sekundenalten Pools, wo die Kursquelle noch keinen
+        belastbaren Wert hat.
+
+        Solche Positionen fliegen aus der Bilanz und werden gezaehlt. Sie
+        stehen zu lassen waere schlimmer als sie wegzulassen: eine einzige
+        davon macht jede Gruppenauswertung daneben unlesbar.
+        """
+        from .follow import IMPLAUSIBLE_MULTIPLE
+
+        value = self.multiple
+        return value is not None and value >= IMPLAUSIBLE_MULTIPLE
+
     def result_usd(self, price: float | None = None) -> float | None:
         """Gewinn oder Verlust in Dollar."""
         if not self.entry_price:
@@ -351,7 +371,7 @@ class PaperBook:
         Ohne diese Zahl ist ein Call eine Vermutung mit selbstbewusstem
         Etikett.
         """
-        closed = self.closed_positions
+        closed = [p for p in self.closed_positions if not p.broken]
         if not closed:
             return "noch keine abgeschlossenen Calls"
         wins = sum(1 for p in closed if (p.result_usd() or 0) > 0)
@@ -459,7 +479,14 @@ class PositionTracker:
 
 
 def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
-    """Kennzahlen einer Gruppe von Positionen."""
+    """Kennzahlen einer Gruppe von Positionen.
+
+    Positionen mit kaputtem Einstiegskurs fliegen vorher raus - siehe
+    ``Position.broken``. Eine einzige davon hat die Gesamtbilanz einmal auf
+    20,5 Millionen Dollar gehoben.
+    """
+    broken = [p for p in positions if p.broken]
+    positions = [p for p in positions if not p.broken]
     closed = [p for p in positions if not p.open]
     still_open = [p for p in positions if p.open]
 
@@ -485,6 +512,9 @@ def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
         # Gesamteinsatz - der "Umsatz" der Simulation.
         "invested_usd": round(sum(p.size_usd for p in closed), 2),
         "turnover_usd": round(sum(p.size_usd for p in positions), 2),
+        #: Aussortiert wegen unbrauchbarem Einstiegskurs - benannt statt
+        #: verschwiegen, sonst fehlt in der Bilanz still etwas.
+        "broken": len(broken),
         "reasons": _reason_counts(closed),
     }
 
