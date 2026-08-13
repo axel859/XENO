@@ -41,6 +41,15 @@ TAKE_PROFIT = 2.0      # verdoppelt -> raus
 STOP_LOSS = 0.6        # 40 Prozent im Minus -> raus
 MAX_HOLD_SECONDS = 24 * 3600
 
+#: Ab hier war nicht der Kurs so hoch, sondern der Einstiegswert kaputt.
+#:
+#: Abgeleitet aus der Ausstiegsregel statt frei gegriffen: sie loest bei 2x
+#: aus und schaut alle 25 Sekunden nach. Damit eine geschlossene Position
+#: auf das Zwanzigfache kommt, muesste der Kurs in einem einzigen Fenster
+#: von unter 2x auf ueber 20x springen. Das gibt es nicht - wohl aber
+#: Kursquellen, die fuer sekundenalte Pools fast null liefern.
+MAX_CREDIBLE_MULTIPLE = TAKE_PROFIT * 10
+
 
 @dataclass
 class Position:
@@ -116,6 +125,34 @@ class Position:
         return self.peak_price / self.entry_price if self.peak_price else None
 
     @property
+    def credited_multiple(self) -> float | None:
+        """Das Vielfache, mit dem gerechnet werden darf.
+
+        **Nach oben gedeckelt, nach unten nicht.** Der Grund steht in einer
+        echten Bilanz: 69 abgeschlossene Trades zu 100 USD, Ausstieg bei 2x -
+        rechnerisch also hoechstens +6.900 USD moeglich. In der Tabelle
+        standen +8.789 USD, bei 41% Treffern und einem Median von 0.52x.
+
+        Die Erklaerung liegt in ``decide``: die Regel loest bei 2x aus, und
+        notiert wird der Kurs, der beim Nachsehen dasteht. Springt er
+        zwischen zwei Abfragen weit darueber, schreibt sich die Simulation
+        den ganzen Sprung gut. Nur bekaeme den niemand: XENO sucht Token mit
+        wenigen tausend Dollar Liquiditaet, und wer dort in eine Spitze
+        verkauft, bekommt den Buchkurs nicht, sondern was das Orderbuch
+        hergibt. Eine Simulation, die sich Ausfuehrungen gutschreibt, die es
+        nicht gibt, ist als Massstab wertlos.
+
+        Nach unten wird bewusst **nicht** gedeckelt: dort ist derselbe
+        Effekt real. Wer unter die Verlustgrenze rutscht, verkauft
+        tatsaechlich schlechter als geplant. Die Unsymmetrie ist keine
+        Nachlaessigkeit, sondern genau das, was am Markt passiert.
+        """
+        value = self.multiple
+        if value is None:
+            return None
+        return min(value, TAKE_PROFIT)
+
+    @property
     def broken(self) -> bool:
         """Ob der Einstiegskurs unbrauchbar war.
 
@@ -130,24 +167,27 @@ class Position:
         stehen zu lassen waere schlimmer als sie wegzulassen: eine einzige
         davon macht jede Gruppenauswertung daneben unlesbar.
         """
-        from .follow import IMPLAUSIBLE_MULTIPLE
-
         value = self.multiple
-        return value is not None and value >= IMPLAUSIBLE_MULTIPLE
+        return value is not None and value >= MAX_CREDIBLE_MULTIPLE
 
     def result_usd(self, price: float | None = None) -> float | None:
-        """Gewinn oder Verlust in Dollar."""
+        """Gewinn oder Verlust in Dollar.
+
+        Gerechnet wird mit dem gedeckelten Vielfachen - siehe
+        ``credited_multiple``. Ohne den Deckel schrieb sich die Simulation
+        Ausfuehrungen gut, die es bei diesen Liquiditaeten nicht gibt.
+        """
         if not self.entry_price:
             return None
         if self.closed_at:
-            current = self.exit_price
+            ratio = self.exit_price / self.entry_price
         elif price:
-            current = price
+            ratio = price / self.entry_price
         else:
             # Offene Position ohne aktuellen Kurs: hier ist tatsaechlich
             # nichts bekannt.
             return None
-        return self.size_usd * (current / self.entry_price - 1.0)
+        return self.size_usd * (min(ratio, TAKE_PROFIT) - 1.0)
 
     def decide(self, price: float, now: float) -> str:
         """Ob und warum diese Position jetzt geschlossen wird."""

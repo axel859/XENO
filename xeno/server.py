@@ -599,6 +599,10 @@ class Handler(BaseHTTPRequestHandler):
                         else None
                     ),
                     "multiple": position.multiple,
+                    # Womit gerechnet wurde. Weicht es vom beobachteten
+                    # Vielfachen ab, hat der Deckel gegriffen - und das
+                    # gehoert sichtbar, nicht stillschweigend abgezogen.
+                    "credited_multiple": position.credited_multiple,
                     "strength": position.strength,
                 }
             )

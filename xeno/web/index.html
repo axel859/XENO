@@ -1168,7 +1168,11 @@ function openTrade(i) {
   const p = tradeList[i];
   if (!p) return;
   const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
-  const pct = p.multiple == null ? null : (p.multiple - 1) * 100;
+  // Gerechnet wird mit dem gedeckelten Vielfachen — sonst schriebe sich die
+  // Simulation Ausführungen gut, die es bei diesen Liquiditäten nicht gibt.
+  const used = p.credited_multiple != null ? p.credited_multiple : p.multiple;
+  const pct = used == null ? null : (used - 1) * 100;
+  const gedeckelt = p.multiple != null && used != null && p.multiple > used + 0.01;
 
   document.getElementById('sheet-body').innerHTML = `
     <div class="card-head">
@@ -1191,7 +1195,13 @@ function openTrade(i) {
       <div><b>${p.peak_multiple == null ? '–' : p.peak_multiple.toFixed(2) + 'x'}</b><span>Spitze</span></div>
       <div><b>${esc(ago(p.opened_at))}</b><span>gekauft vor</span></div>
     </div>
-    ${!p.open && p.peak_multiple != null && p.multiple != null
+    ${gedeckelt ? `<div class="note">Der Kurs stand beim Nachsehen bei
+      <b>${p.multiple.toFixed(1)}x</b> — gerechnet wird trotzdem mit
+      <b>${used.toFixed(1)}x</b>. Die Regel verkauft bei 2x; alles darüber ist
+      ein Sprung zwischen zwei Abfragen, und den zahlt bei ein paar tausend
+      Dollar Liquidität kein Orderbuch aus. Nach unten wird nicht gedeckelt —
+      dort ist derselbe Effekt real.</div>` : ''}
+    ${!gedeckelt && !p.open && p.peak_multiple != null && p.multiple != null
        && p.peak_multiple > p.multiple * 1.15 ? `<div class="note">
       In der Spitze stand die Position bei <b>${p.peak_multiple.toFixed(1)}x</b>,
       verkauft wurde bei <b>${p.multiple.toFixed(1)}x</b>. Die Regel lässt hier

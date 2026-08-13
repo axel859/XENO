@@ -1014,6 +1014,30 @@ einen Neustart.
 Bleibt eine Abfrage ohne jede Antwort, meldet der Durchlauf das als Lücke statt
 als Ruhe. „Es konnte niemand nachsehen" ist etwas anderes als „nichts passiert".
 
+### Der Deckel nach oben
+
+Eine echte Tabelle sah so aus: **69 abgeschlossene Trades zu 100 $, Ausstieg
+bei 2x — rechnerisch also höchstens +6.900 $ möglich. Dastand +8.789 $**, bei
+41 % Treffern und einem Median von 0,52x. Eine Bilanz über dem, was die eigene
+Regel überhaupt hergibt.
+
+Die Ursache steckt in der Ausstiegsregel: sie löst bei 2x aus, notiert aber den
+Kurs, der beim Nachsehen dasteht. Springt er zwischen zwei Abfragen weit
+darüber, wanderte der ganze Sprung in die Bilanz. **Nur bekäme den niemand.**
+XENO sucht Token mit ein paar tausend Dollar Liquidität, und wer dort in eine
+Spitze verkauft, bekommt nicht den Buchkurs, sondern was das Orderbuch hergibt.
+Eine Simulation, die sich Ausführungen gutschreibt, die es nicht gibt, ist als
+Maßstab wertlos — und dieser Maßstab soll später über echtes Geld entscheiden.
+
+Gerechnet wird deshalb höchstens mit 2x. **Nach unten wird bewusst nicht
+gedeckelt:** dort ist derselbe Effekt real — wer unter die Verlustgrenze
+rutscht, verkauft tatsächlich schlechter als geplant. Die Unsymmetrie ist keine
+Nachlässigkeit, sondern genau das, was am Markt passiert.
+
+Wo der Deckel greift, schreibt das Detailblatt es dazu. Und ein Test hält die
+Grenze fest: aus *n* geschlossenen Trades kann nie mehr als *n × Einsatz ×
+(2−1)* herauskommen. Genau diese Grenze war gerissen.
+
 ### Kaputte Einstiegskurse
 
 Eine echte Bilanz sah so aus: **20.800 $ Umsatz, angeblich +20.595.246 $
@@ -1237,7 +1261,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 668 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 673 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

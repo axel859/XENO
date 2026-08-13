@@ -17,6 +17,7 @@ from conftest import MINT
 
 from xeno.calls import Call, Signal
 from xeno.paper import (
+    DEFAULT_SIZE_USD,
     MAX_HOLD_SECONDS,
     STOP_LOSS,
     TAKE_PROFIT,
@@ -442,9 +443,76 @@ class TestKaputterEinstieg:
         book = PaperBook(tmp_path / "paper.json")
         book.positions.append(self.good_position(2.4))
         assert book.summary()["broken"] == 0
-        assert book.summary()["result_usd"] == 140.0
+        # 2.4x wird mit 2.0x gutgeschrieben - siehe TestDeckel.
+        assert book.summary()["result_usd"] == 100.0
 
     def test_the_hit_rate_ignores_it(self, tmp_path):
         book = PaperBook(tmp_path / "paper.json")
         book.positions.extend([self.good_position(), self.broken_position()])
         assert "von 1 abgeschlossenen" in book.hit_rate_text()
+
+
+class TestDeckel:
+    """Die Simulation darf sich keine Ausfuehrung gutschreiben, die es nicht
+    gibt.
+
+    Aufgefallen an einer echten Tabelle: 69 abgeschlossene Trades zu 100 USD
+    bei Ausstieg auf 2x - hoechstens +6.900 USD moeglich. Dastand +8.789 USD,
+    bei 41% Treffern und einem Median von 0.52x. Die Regel loest bei 2x aus
+    und notiert den Kurs, der beim Nachsehen dasteht; springt der weit
+    darueber, wanderte der ganze Sprung in die Bilanz. Bekommen wuerde ihn
+    niemand: bei ein paar tausend Dollar Liquiditaet zahlt einem das
+    Orderbuch den Buchkurs nicht aus.
+    """
+
+    def closed(self, tmp_path, multiple: float) -> PaperBook:
+        book = PaperBook(tmp_path / "paper.json")
+        position = Position(
+            mint="m", symbol="X", group="OK", entry_price=1.0, opened_at=1.0
+        )
+        position.exit_price = multiple
+        position.closed_at = 2.0
+        position.exit_reason = "ziel"
+        book.positions.append(position)
+        return book
+
+    def test_the_overshoot_is_not_credited(self, tmp_path):
+        assert self.closed(tmp_path, 9.0).summary()["result_usd"] == 100.0
+
+    def test_a_normal_win_is_unaffected(self, tmp_path):
+        assert self.closed(tmp_path, 2.0).summary()["result_usd"] == 100.0
+
+    def test_losses_are_not_capped(self, tmp_path):
+        """Nach unten ist derselbe Effekt real: wer unter die Grenze
+        rutscht, verkauft tatsaechlich schlechter als geplant."""
+        assert self.closed(tmp_path, 0.2).summary()["result_usd"] == -80.0
+
+    def test_a_total_loss_stays_a_total_loss(self, tmp_path):
+        assert self.closed(tmp_path, 0.0).summary()["result_usd"] == -100.0
+
+    def test_the_arithmetic_limit_holds(self, tmp_path):
+        """Der Test, der den Fehler gefunden haette.
+
+        Mit Ausstieg bei 2x und festem Einsatz kann die Bilanz aus n
+        geschlossenen Trades niemals mehr als n * Einsatz * (2 - 1)
+        ergeben. Genau diese Grenze war in der echten Tabelle gerissen.
+        """
+        import random
+
+        random.seed(3)
+        book = PaperBook(tmp_path / "paper.json")
+        for i in range(69):
+            position = Position(
+                mint=f"m{i}", symbol="X", group="AVOID",
+                entry_price=1.0, opened_at=1.0,
+            )
+            # Auch mit ein paar kaputten Bezugspunkten dazwischen.
+            position.exit_price = random.choice([0.6, 0.6, 2.05, 3.4, 91.0, 0.0])
+            position.closed_at = 2.0
+            position.exit_reason = "ziel"
+            book.positions.append(position)
+
+        result = book.summary()
+        grenze = result["closed"] * DEFAULT_SIZE_USD * (TAKE_PROFIT - 1.0)
+        assert result["result_usd"] <= grenze
+
