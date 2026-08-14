@@ -240,6 +240,22 @@ class TokenAnalyzer:
 
         # ---- Stufe 4: die teuersten Abfragen ---------------------------
 
+        # Nur noch fuer Token, bei denen sie das Urteil drehen koennen.
+        #
+        # Die Abfragen dieser Stufe kosten das Hundertfache eines
+        # gewoehnlichen Aufrufs, und ihre Pruefungen ziehen ausschliesslich
+        # ab - sie geben nie Punkte. Wer aus den billigen Pruefungen schon
+        # unter der OK-Schwelle liegt, kann durch sie also nicht besser
+        # werden: die Antwort auf "durchlassen oder nicht" steht fest, und
+        # hundert Credits aendern daran nichts mehr.
+        #
+        # In einer echten Nacht waren 87 von rund 2400 geprueften Token OK.
+        # Die uebrigen 96% bekamen die teuerste Abfrage geschenkt, ohne dass
+        # sie irgendetwas entschieden haette.
+        if not self._can_still_reach_ok(data):
+            self.meter.save()
+            return data
+
         # Geparste Transaktionen kosten das Hundertfache eines gewoehnlichen
         # Aufrufs. Ein Token, der bis hierher gekommen ist, ist das wert -
         # jeder andere nicht.
@@ -288,6 +304,30 @@ class TokenAnalyzer:
 
         findings = run_checks(data, self.settings.risk)
         return any(f.severity is Severity.CRITICAL for f in findings)
+
+    def _can_still_reach_ok(self, data: TokenData) -> bool:
+        """Ob die teuren Abfragen das Urteil ueberhaupt noch aendern koennen.
+
+        Der Trick ist, dass die Zwischenpunktzahl eine **Obergrenze** ist:
+        beide Pruefungen der teuren Stufe melden bei fehlenden Daten
+        ausdruecklich *nichts* ("nicht abgerufen - kein Befund, aber auch
+        keine Entwarnung"), und was sie bei vorhandenen Daten melden, zieht
+        nur ab. Der Punktestand kann durch Stufe 4 also nie steigen.
+
+        Wer jetzt unter der OK-Schwelle steht, steht es auch danach.
+
+        Der Preis dafuer, ehrlich benannt: Token unterhalb der Schwelle
+        bekommen keine Musteranalyse mehr. Fuer die Frage "durchlassen oder
+        nicht" aendert das nichts - fuer die Feinunterscheidung zwischen
+        CAUTION und RISKY schon. Das ist es wert: die Unterscheidung
+        zwischen "gut" und "nicht gut" ist die, an der Geld haengt.
+        """
+        from .checks import run_checks
+        from .models import OK_SCORE
+
+        findings = run_checks(data, self.settings.risk)
+        score = max(0, min(100, 100 - sum(f.penalty for f in findings)))
+        return score >= OK_SCORE
 
     @staticmethod
     def _top_wallets(data: TokenData) -> list[str]:

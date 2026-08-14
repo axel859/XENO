@@ -32,6 +32,14 @@ SEVERITY_PENALTY: dict[Severity, int] = {
 #: einer Wallet sind kein Bot, sondern schlicht wenig los.
 MIN_TRADES_FOR_PATTERN = 10
 
+#: Punktschwellen der Urteile. Benannt, weil der Analyzer dieselbe Grenze
+#: braucht: er entscheidet daran, ob eine teure Abfrage ueberhaupt noch
+#: etwas aendern kann. Zwei getrennte 80er waeren ein Fehler, der erst
+#: auffiele, wenn jemand einen davon verschiebt.
+OK_SCORE = 80
+CAUTION_SCORE = 60
+RISKY_SCORE = 35
+
 
 class Verdict(str, Enum):
     AVOID = "AVOID"
@@ -421,11 +429,11 @@ class RiskReport:
             return Verdict.UNKNOWN
 
         score = self.score
-        if score >= 80:
+        if score >= OK_SCORE:
             best = Verdict.OK
-        elif score >= 60:
+        elif score >= CAUTION_SCORE:
             best = Verdict.CAUTION
-        elif score >= 35:
+        elif score >= RISKY_SCORE:
             best = Verdict.RISKY
         else:
             best = Verdict.AVOID

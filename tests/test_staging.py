@@ -103,8 +103,17 @@ class FakeSource:
         return None
 
 
-def build(monkeypatch, tmp_path, mint_info, *, cap=1_000_000):
-    """Baut einen Analyzer, dessen Quellen alle Doppel sind."""
+def build(monkeypatch, tmp_path, mint_info, *, cap=1_000_000, reaches_ok=True):
+    """Baut einen Analyzer, dessen Quellen alle Doppel sind.
+
+    ``reaches_ok`` setzt die Schwellenpruefung vor Stufe 4 ausser Kraft.
+    Die Tests hier pruefen Stufung und Budget; ob ein Token die OK-Schwelle
+    erreicht, haengt an einem Dutzend Einzelpruefungen und gehoert in
+    eigene Tests (siehe ``TestSchwellenfilter``). Ohne diesen Schalter
+    haetten sie sich gegenseitig im Weg gestanden: der Doppel-RPC liefert
+    keine Holder-Daten, damit kommt jeder Testtoken auf 35 Punkte, und
+    Stufe 4 liefe nie.
+    """
     analyzer = TokenAnalyzer.__new__(TokenAnalyzer)
     analyzer.settings = Settings()
     analyzer.rpc = FakeRpc()
@@ -122,6 +131,8 @@ def build(monkeypatch, tmp_path, mint_info, *, cap=1_000_000):
     monkeypatch.setattr(
         "xeno.analyzer.parse_mint_account", lambda mint, account: mint_info
     )
+    if reaches_ok:
+        analyzer._can_still_reach_ok = lambda data: True
     return analyzer
 
 
@@ -276,3 +287,79 @@ class _BrokenRpc(_NoRpc):
 class _EmptyRpc(_NoRpc):
     def get_account_info(self, mint):
         return None
+
+
+class TestSchwellenfilter:
+    """Die teuerste Abfrage nur dort, wo sie das Urteil noch drehen kann.
+
+    Die Idee steht und faellt mit einer Eigenschaft: die Zwischenpunktzahl
+    vor Stufe 4 ist eine **Obergrenze**. Beide Pruefungen dieser Stufe
+    melden bei fehlenden Daten ausdruecklich nichts, und was sie bei
+    vorhandenen Daten melden, zieht nur ab. Wer jetzt unter der Schwelle
+    steht, steht es auch danach.
+
+    Der erste Test sichert genau diese Annahme. Kippt sie irgendwann - etwa
+    weil eine Pruefung anfaengt, Punkte zu vergeben - wuerde die Filterung
+    still Token aussortieren, die OK geworden waeren.
+    """
+
+    def analyzer(self):
+        a = TokenAnalyzer.__new__(TokenAnalyzer)
+        a.settings = Settings()
+        return a
+
+    def test_the_expensive_checks_only_ever_subtract(self):
+        """Die Annahme, auf der alles steht."""
+        from xeno.checks.funding import check_funding
+        from xeno.checks.tradepattern import check_trade_pattern
+
+        leer = TokenData(mint=MINT, candidate=make_candidate(), mint_info=make_mint_info())
+        assert check_trade_pattern(leer, Settings().risk) == []
+        assert check_funding(leer, Settings().risk) == []
+
+        mit_daten = TokenData(
+            mint=MINT,
+            candidate=make_candidate(),
+            mint_info=make_mint_info(),
+            trades=[],
+            origins=[],
+        )
+        for pruefung in (check_trade_pattern, check_funding):
+            assert all(f.penalty >= 0 for f in pruefung(mit_daten, Settings().risk))
+
+    def test_a_token_below_the_threshold_is_skipped(self):
+        """35 Punkte - kein Musterbefund der Welt macht daraus OK."""
+        data = TokenData(mint=MINT, candidate=make_candidate(), mint_info=make_mint_info())
+        assert self.analyzer()._can_still_reach_ok(data) is False
+
+    def test_a_clean_token_passes(self):
+        from conftest import make_distribution, rugcheck
+
+        data = TokenData(
+            mint=MINT,
+            candidate=make_candidate(socials={"twitter": "https://x.com/x"}),
+            mint_info=make_mint_info(),
+            distribution=make_distribution([4.0, 3.0, 2.0]),
+            holder_source="rpc",
+            rugcheck=rugcheck(markets=[{"lp": {"lpLockedPct": 100.0}}]),
+        )
+        assert self.analyzer()._can_still_reach_ok(data) is True
+
+    def test_the_threshold_is_the_same_one_the_verdict_uses(self):
+        """Zwei getrennte 80er waeren ein Fehler, der erst auffiele, wenn
+        jemand einen davon verschiebt."""
+        from xeno.models import OK_SCORE, Finding, RiskReport, Severity
+
+        report = RiskReport(mint=MINT, mint_info=make_mint_info())
+        report.findings = [
+            Finding(check="t", code="x", severity=Severity.MEDIUM, message="m")
+        ]
+        assert report.score == 100 - 15
+        assert (report.score >= OK_SCORE) == (report.verdict.value == "OK")
+
+    def test_it_saves_the_expensive_calls(self, monkeypatch, tmp_path):
+        """Der Gewinn, in einer Zahl: ein Token unter der Schwelle kostet
+        keinen einzigen Enhanced-Aufruf mehr."""
+        analyzer = build(monkeypatch, tmp_path, make_mint_info(), reaches_ok=False)
+        analyzer.collect(MINT, candidate=make_candidate(pool_address="pool1"))
+        assert analyzer.helius.calls == []

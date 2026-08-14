@@ -1128,6 +1128,28 @@ ohne dass ihn etwas daran gehindert oder auch nur davon erzählt hätte.
 
 Daraus sind zwei Dinge entstanden:
 
+### Die teuerste Abfrage nur dort, wo sie etwas entscheidet
+
+Die Transaktions- und Herkunftsabfragen kosten **100 Credits statt 1**. Bisher
+liefen sie für jeden Token ohne kritischen Befund — auch für den, der schon bei
+45 Punkten stand und nie durchkommen würde.
+
+Der Trick, mit dem sich das gefahrlos einsparen lässt: **beide Prüfungen dieser
+Stufe ziehen nur ab, sie geben nie Punkte.** Und bei fehlenden Daten melden sie
+ausdrücklich nichts („nicht abgerufen — kein Befund, aber auch keine
+Entwarnung"). Die Zwischenpunktzahl vor der Stufe ist damit eine **Obergrenze**:
+wer jetzt unter der OK-Schwelle liegt, liegt es auch danach.
+
+Die Abfrage läuft deshalb nur noch, wenn der Token die Schwelle noch erreichen
+kann. In einer echten Nacht waren **87 von rund 2400** geprüften Token OK — die
+übrigen 96 % bekamen die teuerste Abfrage geschenkt, ohne dass sie irgendetwas
+entschieden hätte.
+
+Der Preis, ehrlich benannt: Token unterhalb der Schwelle bekommen keine
+Musteranalyse mehr. Für „durchlassen oder nicht" ändert das nichts, für die
+Feinunterscheidung zwischen CAUTION und RISKY schon. Ein Test hält die Annahme
+fest, auf der das steht — kippt sie, fällt er um.
+
 ### Ein Fehlschlag ist kein Urteil
 
 Läuft das Budget leer oder fällt der RPC aus, kann der Mint-Account nicht
@@ -1311,7 +1333,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 690 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 695 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und
