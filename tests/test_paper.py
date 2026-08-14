@@ -516,3 +516,55 @@ class TestDeckel:
         grenze = result["closed"] * DEFAULT_SIZE_USD * (TAKE_PROFIT - 1.0)
         assert result["result_usd"] <= grenze
 
+
+
+class TestBuchPfad:
+    """Das Papierbuch gehoert zur Zustandsdatei.
+
+    Wer mit ``--state-file`` eine zweite Messreihe aufmacht, will sie
+    getrennt auswerten. Lief der Papierhandel weiter in dasselbe Buch,
+    mischten sich beide Versuche - und ausgerechnet die Trades-Tabelle,
+    die eigentliche Antwort auf "taugt es etwas", waere ein Brei aus
+    beidem.
+    """
+
+    def test_the_default_stays_where_it_was(self):
+        """Sonst waere ein bestehendes Buch nach einem Update verwaist."""
+        from xeno.paper import BOOK_FILE_NAME, book_path_for
+        from xeno.paths import STATE_FILE_NAME, data_dir, target_path
+
+        assert book_path_for(target_path(STATE_FILE_NAME)) == data_dir() / BOOK_FILE_NAME
+
+    def test_an_own_state_gets_an_own_book(self, tmp_path):
+        from xeno.paper import book_path_for
+
+        got = book_path_for(tmp_path / "XENO-balanced.json")
+        assert got == tmp_path / "XENO-balanced-paper.json"
+
+    def test_two_experiments_do_not_share_a_book(self, tmp_path):
+        from xeno.paper import book_path_for
+
+        a = book_path_for(tmp_path / "early.json")
+        b = book_path_for(tmp_path / "balanced.json")
+        assert a != b
+
+    def test_the_watcher_uses_it(self, tmp_path):
+        """Der Punkt der ganzen Aenderung - sonst greift sie nirgends."""
+        from xeno.config import Settings
+        from xeno.watcher import Watcher
+        from xeno.watchstate import WatchState
+
+        state = WatchState(tmp_path / "balanced.json")
+        watcher = Watcher(settings=Settings(), state=state, log=lambda _m: None)
+        assert watcher.book.path == tmp_path / "balanced-paper.json"
+
+    def test_positions_land_in_the_right_file(self, tmp_path):
+        from xeno.paper import PaperBook, book_path_for
+
+        book = PaperBook(book_path_for(tmp_path / "balanced.json"))
+        book.positions.append(
+            Position(mint="m", symbol="X", group="OK", entry_price=1.0, opened_at=1.0)
+        )
+        book.save(force=True)
+        assert (tmp_path / "balanced-paper.json").is_file()
+        assert not (tmp_path / "paper-trades.json").exists()

@@ -180,9 +180,11 @@ class Watcher:
         # Papierhandel. Er ist der Auto-Trader ohne Geld: dieselbe
         # Entscheidungskette, nur dass am Ende keine Transaktion steht.
         if book is None:
-            from .paper import PaperBook
+            from .paper import PaperBook, book_path_for
 
-            book = PaperBook()
+            # Folgt der Zustandsdatei: wer mit --state-file eine zweite
+            # Messreihe aufmacht, will sie auch im Papierhandel getrennt.
+            book = PaperBook(book_path_for(self.state.path))
         self.book = book
         # Eigene, schnellere Schleife fuer die offenen Positionen. Sie haengt
         # bewusst nicht am Pruefzyklus: der laeuft je nach Kontingent alle

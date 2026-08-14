@@ -203,6 +203,26 @@ class Position:
         return ""
 
 
+def book_path_for(state_path) -> Path:
+    """Wo das Papierbuch zu einer Zustandsdatei liegt.
+
+    Beim Standardpfad bleibt es, wo es immer lag - sonst waere ein
+    bestehendes Buch nach einem Update verwaist.
+
+    Bei einer **eigenen** Zustandsdatei bekommt es einen eigenen Namen
+    daneben. Genau dafuer gibt es ``--state-file``: um zwei Einstellungen
+    getrennt zu messen. Liefe der Papierhandel weiter in dasselbe Buch,
+    mischten sich beide Versuchsreihen, und die Trades-Tabelle - die
+    eigentliche Antwort auf "taugt es etwas" - waere ein Brei aus beidem.
+    """
+    from .paths import STATE_FILE_NAME, data_dir, target_path
+
+    path = Path(state_path)
+    if path == target_path(STATE_FILE_NAME):
+        return data_dir() / BOOK_FILE_NAME
+    return path.with_name(f"{path.stem}-paper.json")
+
+
 class PaperBook:
     """Alle Papierpositionen, dauerhaft gespeichert."""
 

@@ -1060,6 +1060,25 @@ werden **gezählt** statt verschwiegen. Eine einzige davon machte jede
 Gruppenauswertung daneben unlesbar — und das ist genau die Auswertung, um die
 es hier geht.
 
+### Zwei Einstellungen getrennt messen
+
+Wer wissen will, ob ein anderes Profil besser läuft, gibt ihm eine eigene
+Zustandsdatei:
+
+```bash
+python3 -m xeno serve --profile balanced --state-file ~/xeno-balanced.json
+python3 -m xeno stats --state-file ~/xeno-balanced.json
+```
+
+**Das Papierbuch folgt der Zustandsdatei** — bei `~/xeno-balanced.json` liegen
+die Positionen in `~/xeno-balanced-paper.json`. Ohne das mischten sich beide
+Versuchsreihen im selben Buch, und ausgerechnet die Trades-Bilanz wäre ein Brei
+aus beidem. Beim Standardpfad bleibt alles, wo es war.
+
+Der Credit-Zähler bleibt bewusst **gemeinsam**: er zählt das Kontingent deines
+Anbieters, und das gibt es nur einmal. Zwei Messreihen dürfen es nicht doppelt
+ausgeben.
+
 ## Die Vergleichsgruppe — Fehlalarme sichtbar machen
 
 Bisher verschwanden die im Vorfilter abgelehnten Token spurlos. Von 132
@@ -1270,7 +1289,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 673 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 678 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

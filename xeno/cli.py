@@ -520,7 +520,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
         print("XENO merkt sich ab jetzt zu jedem geprueften Token den Kurs und")
         print("schaut nach 15min, 1h, 6h und 24h nach. Lass den Bot ein paar")
         print("Stunden laufen, dann steht hier die Auswertung.")
-        _print_paper()
+        _print_paper(state.path)
         return 0
 
     summary = summarise(entries)
@@ -528,7 +528,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
         wartend = len(entries)
         print(f"{wartend} Token werden beobachtet, aber noch keine Messung faellig.")
         print("Die erste kommt 15 Minuten nach der jeweiligen Pruefung.")
-        _print_paper()
+        _print_paper(state.path)
         return 0
 
     if args.json:
@@ -591,7 +591,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
             "filtert er in die falsche Richtung."
         )
 
-    _print_paper()
+    _print_paper(state.path)
     print(
         "\nMEDIAN heisst: die Haelfte lief besser, die Haelfte schlechter.\n"
         "Bewusst nicht der Durchschnitt - ein einzelner Hunderter wuerde\n"
@@ -606,16 +606,20 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_paper() -> None:
+def _print_paper(state_path=None) -> None:
     """Die Bilanz des Papierhandels - die eigentliche Antwort.
 
     Ein Median sagt, wie sich Token entwickelt haben. Diese Zahl sagt, was
     dabei herausgekommen waere. Das ist nicht dasselbe: sie enthaelt die
     Ausstiegsregel, und die entscheidet mit.
-    """
-    from .paper import STOP_LOSS, TAKE_PROFIT, PaperBook
 
-    book = PaperBook()
+    Das Buch gehoert zur Zustandsdatei: wer mit ``--state-file`` eine
+    zweite Messreihe fuehrt, bekommt hier deren Bilanz und nicht die der
+    ersten.
+    """
+    from .paper import STOP_LOSS, TAKE_PROFIT, PaperBook, book_path_for
+
+    book = PaperBook(book_path_for(state_path) if state_path else None)
     result = book.summary()
     if not result["closed"] and not result["open"]:
         print("\nPapierhandel: noch keine Calls. Es wird nur bei klarer Lage einer.")
