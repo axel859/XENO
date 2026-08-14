@@ -739,3 +739,85 @@ class TestAusblenden:
             assert AlertKind.NEW not in kinds
         finally:
             httpd.server_close()
+
+
+class TestFehlschlagNichtSpeichern:
+    """Ein gescheiterter Versuch ist kein Urteil.
+
+    Er sieht aber wie eines aus: Urteil UNKNOWN, Punktzahl, Befunde der Art
+    "konnte nicht geprueft werden". Wurde er gespeichert, wanderte er als
+    vollwertiger Datenpunkt in die Auswertung - mit Ausgangskurs, mit
+    Papierposition, mit eigener Gruppe. Eine Nacht mit leerem Kontingent
+    hinterliess so 255 Messungen und 63 Positionen, die nichts ueber Token
+    aussagen, sondern nur ueber den eigenen Zugang.
+    """
+
+    def failed(self, mint: str = MINT) -> RiskReport:
+        report = make_report(mint=mint)
+        report.mint_info = None
+        report.lookup_failed = True
+        report.errors = ["Tagesbudget aufgebraucht - Mint-Account nicht geprueft"]
+        return report
+
+    def test_a_failure_is_not_usable(self):
+        assert not self.failed().usable
+
+    def test_a_real_verdict_is(self):
+        assert make_report().usable
+
+    def test_an_invalid_mint_is_a_result_not_a_failure(self):
+        """"Adresse ist kein gueltiger Token-Mint" ist ein Befund - und ein
+        nuetzlicher. Der gehoert gespeichert."""
+        report = make_report()
+        report.mint_info = None
+        report.errors = ["Adresse ist kein gueltiger Token-Mint"]
+        assert report.usable
+
+    def test_nothing_is_written_to_the_state(self, tmp_path):
+        watcher, _notifier, analyzer = make_watcher(tmp_path, [make_candidate()])
+        analyzer.reports[MINT] = self.failed()
+        watcher.cycle(budget=5, test_trade=False)
+        assert watcher.state.get(MINT) is None
+
+    def test_no_paper_position_is_opened(self, tmp_path):
+        """Die Gruppe "Unbekannt" in der Bilanz gab es nur deswegen."""
+        watcher, _notifier, analyzer = make_watcher(tmp_path, [make_candidate()])
+        analyzer.reports[MINT] = self.failed()
+        watcher.cycle(budget=5, test_trade=False)
+        assert watcher.book.positions == []
+
+    def test_nothing_is_reported(self, tmp_path):
+        watcher, notifier, analyzer = make_watcher(tmp_path, [make_candidate()])
+        analyzer.reports[MINT] = self.failed()
+        watcher.cycle(budget=5, test_trade=False)
+        assert notifier.alerts == []
+
+    def test_the_cycle_names_it(self, tmp_path):
+        watcher, _notifier, analyzer = make_watcher(tmp_path, [make_candidate()])
+        analyzer.reports[MINT] = self.failed()
+        stats = watcher.cycle(budget=5, test_trade=False)
+        assert stats.skipped == 1
+        assert stats.checked == 0
+
+    def test_an_earlier_good_result_survives(self, tmp_path):
+        """Ein Fehlschlag darf einen frueheren Befund nicht ueberschreiben."""
+        watcher, _notifier, analyzer = make_watcher(tmp_path, [make_candidate()])
+        watcher.cycle(budget=5, test_trade=False)
+        vorher = watcher.state.get(MINT)
+        assert vorher is not None and vorher.check_count == 1
+
+        analyzer.reports[MINT] = self.failed()
+        watcher.state.get(MINT).last_checked = 0     # faellig machen
+        watcher.cycle(budget=5, test_trade=False)
+
+        nachher = watcher.state.get(MINT)
+        assert nachher.check_count == 1
+        assert nachher.verdict == vorher.verdict
+
+    def test_a_normal_check_still_lands(self, tmp_path):
+        """Gegenprobe - sonst wuerde der Filter einfach alles wegwerfen."""
+        watcher, _notifier, _analyzer = make_watcher(tmp_path, [make_candidate()])
+        stats = watcher.cycle(budget=5, test_trade=False)
+        assert stats.checked == 1
+        assert stats.skipped == 0
+        assert watcher.state.get(MINT) is not None

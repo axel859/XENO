@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from .analyzer import TokenAnalyzer
 from .calls import worth_calling
+from .credits import RPC
 from .config import Settings
 from .discovery import Discovery, merge_candidates
 from .models import Finding, RiskReport, Severity, TokenCandidate, Verdict
@@ -71,6 +72,8 @@ class CycleStats:
     calls: int = 0
     #: Laengst abgelegte Token, die wieder gehandelt werden.
     wakes: int = 0
+    #: Versuche, die am Zugang gescheitert sind - nicht gespeichert.
+    skipped: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -133,6 +136,22 @@ def decide_alert(
         )
 
     return None
+
+
+def _hours_to_utc_midnight(now: float | None = None) -> float:
+    """Stunden bis zum naechsten Tagesbudget.
+
+    Der Zaehler rollt nach UTC um, nicht nach Ortszeit - ohne diese Angabe
+    raet man, wann es weitergeht.
+    """
+    import time as _time
+    from datetime import datetime, timedelta, timezone
+
+    moment = datetime.fromtimestamp(now or _time.time(), tz=timezone.utc)
+    naechster = (moment + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return (naechster - moment).total_seconds() / 3600.0
 
 
 def _notable(findings: list[Finding]) -> list[Finding]:
@@ -469,7 +488,20 @@ class Watcher:
         # wofuer das Pruefbudget ausgegeben wird.
         woken = self._pulse(stats, now)
 
-        for mint, candidate in self.build_queue(passed, budget, now, list(woken)):
+        # Reicht das Budget nicht einmal fuer den Mint-Account, scheitert
+        # jede Pruefung dieses Durchlaufs auf dieselbe Weise. Sie trotzdem
+        # zu starten kostet Zeit und erzeugt nichts als Fehlschlaege - im
+        # Log standen dafuer schon einmal 641 ausgelassene Abfragen.
+        if meter is not None and not meter.can_afford(RPC):
+            stats.errors.append(
+                "Tagesbudget aufgebraucht - keine Tiefpruefungen in diesem "
+                f"Durchlauf. Naechstes Budget in {_hours_to_utc_midnight():.1f} h."
+            )
+            queue = []
+        else:
+            queue = self.build_queue(passed, budget, now, list(woken))
+
+        for mint, candidate in queue:
             if stop_event is not None and stop_event.is_set():
                 break
             previous = self.state.get(mint)
@@ -480,6 +512,15 @@ class Watcher:
                 )
             except Exception as exc:  # noqa: BLE001
                 stats.errors.append(f"{mint[:10]}: {exc}")
+                continue
+
+            # Ein Fehlschlag ist kein Ergebnis. Nicht speichern, nicht
+            # handeln, nicht melden - sonst steht am Morgen eine Gruppe
+            # "Unbekannt" in der Auswertung, die nichts ueber Token
+            # aussagt, sondern nur ueber den eigenen Zugang. Der Token
+            # bleibt unbekannt und kommt beim naechsten Mal wieder dran.
+            if not report.usable:
+                stats.skipped += 1
                 continue
 
             stats.checked += 1
@@ -606,6 +647,7 @@ class Watcher:
                         + (f", {stats.live} live" if stats.live else "")
                         + (f", {stats.calls} CALL" if stats.calls else "")
                         + (f", {stats.wakes} aufgewacht" if stats.wakes else "")
+                        + (f", {stats.skipped} nicht lesbar" if stats.skipped else "")
                         + (f", {stats.control} Vergleich" if stats.control else "")
                         + (f", {stats.measured} nachverfolgt" if stats.measured else "")
                         + (

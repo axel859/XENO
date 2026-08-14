@@ -382,9 +382,13 @@ class Handler(BaseHTTPRequestHandler):
                 report = self.analyzer.analyze(mint)
             except Exception as exc:  # noqa: BLE001
                 return self._error(502, f"Pruefung fehlgeschlagen: {exc}")
-            self.app.add_report(report)
-            self.app.state.record(report)
-            self.app.state.save()
+            # Ein gescheiterter Versuch wird angezeigt, aber nicht gespeichert:
+            # das Blatt soll sagen, woran es lag, ohne dass ein Fehlschlag als
+            # Urteil in die Auswertung wandert.
+            if report.usable:
+                self.app.add_report(report)
+                self.app.state.record(report)
+                self.app.state.save()
             return self._json(report.to_dict())
 
         return self._error(404, "Unbekannter Pfad")

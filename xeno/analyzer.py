@@ -185,11 +185,15 @@ class TokenAnalyzer:
                 self.meter.spend(RPC)
                 data.mint_info = parse_mint_account(mint, account)
                 if data.mint_info is None:
+                    # Ein Ergebnis, kein Fehlschlag: die Adresse ist einfach
+                    # kein Token-Mint. Das darf und soll gespeichert werden.
                     data.errors.append("Adresse ist kein gueltiger Token-Mint")
             except Exception as exc:  # noqa: BLE001
+                data.lookup_failed = True
                 data.errors.append(f"RPC getAccountInfo fehlgeschlagen: {exc}")
         else:
             self.meter.deny()
+            data.lookup_failed = True
             data.errors.append("Tagesbudget aufgebraucht - Mint-Account nicht geprueft")
 
         # ---- Abbruchpunkt ----------------------------------------------
@@ -350,6 +354,7 @@ def build_report(data: TokenData, settings: Settings) -> RiskReport:
         distribution=data.distribution,
         structure=data.structure,
         errors=list(data.errors),
+        lookup_failed=data.lookup_failed,
     )
     report.findings = run_checks(data, settings.risk)
     return report

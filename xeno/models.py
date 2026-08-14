@@ -376,9 +376,30 @@ class RiskReport:
     #: den Befunden: die Richtung ist eine Beobachtung, keine Bewertung.
     structure: Any | None = None
     errors: list[str] = field(default_factory=list)
+    #: Der Mint-Account war nicht lesbar - Budget alle, RPC ausgefallen.
+    lookup_failed: bool = False
 
     def add(self, finding: Finding) -> None:
         self.findings.append(finding)
+
+    @property
+    def usable(self) -> bool:
+        """Ob hier ein Urteil steht - oder nur ein gescheiterter Versuch.
+
+        Ein Fehlschlag sieht aus wie ein Ergebnis: Urteil UNKNOWN, Punktzahl,
+        Befunde der Art "konnte nicht geprueft werden". Wird er gespeichert,
+        wandert er als vollwertiger Datenpunkt in die Auswertung - mit
+        Ausgangskurs, mit Papierposition, mit eigener Gruppe. Eine Nacht mit
+        leerem Kontingent hinterliess so 255 Messungen und 63 Positionen, die
+        nichts ueber Token aussagen, sondern nur ueber den eigenen Zugang.
+
+        Nicht gespeichert zu werden ist hier die richtige Behandlung: der
+        Token bleibt unbekannt und wird beim naechsten Mal erneut geprueft.
+
+        **Nicht** betroffen ist der Fall "Adresse ist kein gueltiger
+        Token-Mint" - das ist ein Ergebnis, und ein nuetzliches.
+        """
+        return not self.lookup_failed
 
     @property
     def score(self) -> int:
@@ -439,4 +460,5 @@ class RiskReport:
             else None,
             "structure": self.structure.to_dict() if self.structure else None,
             "errors": list(self.errors),
+            "lookup_failed": self.lookup_failed,
         }

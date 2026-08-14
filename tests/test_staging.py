@@ -230,3 +230,49 @@ def test_disqualified_needs_a_critical_finding():
 
     leer = TokenData(mint=MINT, candidate=make_candidate())
     assert analyzer._already_disqualified(leer) is False
+
+
+class TestFehlschlagMarkieren:
+    """Der Unterschied zwischen "nicht nachgesehen" und "nachgesehen, nichts".
+
+    Beides endet im Urteil UNKNOWN, aber nur das eine ist ein Ergebnis.
+    """
+
+    def test_an_empty_budget_marks_the_lookup_as_failed(self):
+        from xeno.credits import CreditMeter
+
+        meter = CreditMeter(rpc_url="https://x.quiknode.pro/k/", monthly_cap=1)
+        analyzer = TokenAnalyzer(Settings(), rpc=_NoRpc(), meter=meter)
+        data = analyzer.collect(MINT, candidate=make_candidate())
+        assert data.lookup_failed
+        assert any("Tagesbudget" in e for e in data.errors)
+
+    def test_a_broken_rpc_marks_it_too(self):
+        analyzer = TokenAnalyzer(Settings(), rpc=_BrokenRpc())
+        data = analyzer.collect(MINT, candidate=make_candidate())
+        assert data.lookup_failed
+
+    def test_a_non_mint_address_is_a_result(self):
+        """Hier wurde nachgesehen - das Ergebnis ist nur unerfreulich."""
+        analyzer = TokenAnalyzer(Settings(), rpc=_EmptyRpc())
+        data = analyzer.collect(MINT, candidate=make_candidate())
+        assert not data.lookup_failed
+        assert any("kein gueltiger Token-Mint" in e for e in data.errors)
+
+
+class _NoRpc:
+    requests = 0
+    large_requests = 0
+
+    def get_account_info(self, mint):
+        raise AssertionError("darf bei leerem Budget nicht gefragt werden")
+
+
+class _BrokenRpc(_NoRpc):
+    def get_account_info(self, mint):
+        raise RuntimeError("Verbindung abgebrochen")
+
+
+class _EmptyRpc(_NoRpc):
+    def get_account_info(self, mint):
+        return None

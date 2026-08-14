@@ -1128,6 +1128,28 @@ ohne dass ihn etwas daran gehindert oder auch nur davon erzählt hätte.
 
 Daraus sind zwei Dinge entstanden:
 
+### Ein Fehlschlag ist kein Urteil
+
+Läuft das Budget leer oder fällt der RPC aus, kann der Mint-Account nicht
+gelesen werden. Das Ergebnis sah bisher aus wie ein Urteil — **UNKNOWN**, mit
+Punktzahl und Befunden der Art „konnte nicht geprüft werden" — und wurde als
+vollwertiger Datenpunkt gespeichert: mit Ausgangskurs, mit Papierposition, mit
+eigener Gruppe in der Auswertung.
+
+Eine Nacht mit leerem Kontingent hinterließ so **255 Messungen und 63
+Positionen**, die nichts über Token aussagen, sondern nur über den eigenen
+Zugang. Sie verfälschten genau den Vergleich, für den die Auswertung gebaut ist.
+
+Solche Versuche werden jetzt **gar nicht gespeichert**. Der Token bleibt
+unbekannt und kommt beim nächsten Durchlauf wieder dran; ein früherer, guter
+Befund bleibt unangetastet. Reicht das Budget nicht einmal für den
+Mint-Account, überspringt der Durchlauf die Tiefprüfungen ganz und sagt, wann
+das nächste Budget kommt — statt achthundert Versuche zu starten, die alle
+gleich scheitern.
+
+Nicht betroffen ist „Adresse ist kein gültiger Token-Mint": dort **wurde**
+nachgesehen, das Ergebnis ist nur unerfreulich. Das gehört gespeichert.
+
 ### Der Zähler
 
 `xeno/credits.py` kennt die Preisliste des erkannten Anbieters, zählt
@@ -1289,7 +1311,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 678 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 690 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

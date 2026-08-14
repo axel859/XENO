@@ -41,6 +41,11 @@ class TokenData:
     #: Herkunft der groessten Halter. None heisst "nicht abgerufen".
     origins: list[Origin] | None = None
     errors: list[str] = field(default_factory=list)
+    #: Der Mint-Account konnte nicht **gelesen** werden - Budget alle, RPC
+    #: ausgefallen. Das ist etwas anderes als ein Token, der sich als
+    #: ungueltig herausstellt: dort steht ein Ergebnis fest, hier fehlt der
+    #: Blick. Ein Fehlschlag darf nicht als Urteil in den Daten landen.
+    lookup_failed: bool = False
 
     @property
     def rc(self) -> RugCheckReport:
