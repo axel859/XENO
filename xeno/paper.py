@@ -41,6 +41,77 @@ TAKE_PROFIT = 2.0      # verdoppelt -> raus
 STOP_LOSS = 0.6        # 40 Prozent im Minus -> raus
 MAX_HOLD_SECONDS = 24 * 3600
 
+#: Was vom Einsatz nach Hin- und Rueckweg uebrig bleibt, wenn zu einem Token
+#: keine eigene Messung vorliegt.
+#:
+#: Gemessen ueber Jupiter an neun Token des early-Profils bei 100 USD
+#: Ordergroesse: Verlust 0.8% bis 5.6%, Median 4.4%. Die Spanne haengt fast
+#: nur an der Pooltiefe - der Token mit 70.000 USD Liquiditaet kostete 0.8%,
+#: die mit 3.000 USD ueber 5%.
+#:
+#: Gebraucht wird der Wert vor allem fuer die Vergleichsgruppe: die
+#: abgelehnten Token werden nie tief geprueft, es gibt zu ihnen also keinen
+#: gemessenen Rueckweg. Sie mit 0% zu rechnen waere die schlechteste
+#: Variante - dann saehe ausgerechnet der Massstab guenstiger aus als das,
+#: was er messen soll. Der Standardwert ist der Median genau der Messungen,
+#: die die geprueften Token liefern - damit unterscheiden sich beide Gruppen
+#: im Mittel nicht durch die Kostenannahme, sondern nur durch die Streuung.
+DEFAULT_RETENTION = 0.956
+
+#: Was das Durchbringen einer Transaktion kostet, fuer Kauf und Verkauf
+#: zusammen.
+#:
+#: Auf Solana zahlt man ueber die Grundgebuehr hinaus eine Prioritaetsgebuehr,
+#: sonst bleibt die Transaktion bei Andrang liegen - und genau bei frischen
+#: Memecoins ist Andrang. Angesetzt sind rund 0.001 SOL je Transaktion bei
+#: etwa 200 USD je SOL, also 0.20 USD, zweimal.
+#:
+#: Das ist eine Annahme, keine Messung: die tatsaechliche Gebuehr haengt an
+#: der Auslastung und an der eigenen Einstellung. Sie steht hier trotzdem,
+#: weil null anzusetzen die groessere Luege waere. Ueber ``XENO_FEE_USD``
+#: laesst sie sich anpassen.
+DEFAULT_FEE_USD = 0.40
+
+
+def _fee_usd() -> float:
+    raw = os.environ.get("XENO_FEE_USD", "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            pass
+    return DEFAULT_FEE_USD
+
+
+def measured_retention(round_trip) -> float | None:
+    """Der gemessene Rueckweg eines Berichts - oder ``None``.
+
+    **Ein Wert ab 1.0 wird verworfen.** Er hiesse, dass Kauf und sofortiger
+    Verkauf mehr einbringen als sie kosten; das gaebe es nur als risikolose
+    Arbitrage. Bei frischen Bonding-Curve-Pools liefert Jupiter genau solche
+    Werte, weil beide Seiten gegen unterschiedlich aktuelle Poolstaende
+    gerechnet werden. Ihn zu uebernehmen hiesse, eine Position mit Gewinn zu
+    eroeffnen, bevor sich der Kurs bewegt hat.
+
+    **Ein schlechter Wert wird dagegen uebernommen, so schlecht er ist.**
+    Wenn Jupiter sagt, vom Einsatz kaeme die Haelfte zurueck, dann ist das
+    das Ergebnis und nicht ein Ausreisser. Genau diese Token sind der Grund,
+    warum die Bilanz Kosten braucht.
+    """
+    if round_trip is None:
+        return None
+    value = getattr(round_trip, "retention", None)
+    if value is None or getattr(round_trip, "unreliable", False):
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not 0.0 <= value < 1.0:
+        return None
+    return value
+
+
 #: Ab hier war nicht der Kurs so hoch, sondern der Einstiegswert kaputt.
 #:
 #: Abgeleitet aus der Ausstiegsregel statt frei gegriffen: sie loest bei 2x
@@ -76,6 +147,25 @@ class Position:
     #: Bewertung beim Einstieg. Die interessantere Zahl als der Kurs, weil
     #: sie sich zwischen Token vergleichen laesst.
     entry_mcap_usd: float | None = None
+
+    #: Anteil des Einsatzes, der einen Hin- und Rueckweg ueberlebt - beim
+    #: Einstieg von Jupiter gemessen, sonst ``DEFAULT_RETENTION``. Darin
+    #: stecken Swap-Gebuehr und Preiseinfluss, also alles, was zwischen dem
+    #: Kurs auf dem Chart und dem Kontostand steht.
+    #:
+    #: Zwei Einschraenkungen gehoeren dazu, damit die Zahl nicht genauer
+    #: aussieht als sie ist. Gemessen wird mit 0.1 SOL, gehandelt werden
+    #: 100 USD, also rund 0.5 SOL - der Preiseinfluss der echten Order ist
+    #: damit eher hoeher. Und gemessen wird beim **Einstieg**; ob der Pool
+    #: beim Ausstieg noch so tief ist, weiss beim Kauf niemand. Bei einem
+    #: Ausstieg an der Verlustgrenze ist er es regelmaessig nicht.
+    retention: float = DEFAULT_RETENTION
+    #: Ob der Wert gemessen wurde oder der Standardwert ist. Gehoert
+    #: festgehalten: eine geschaetzte Zahl darf sich nicht als gemessene
+    #: ausgeben.
+    retention_measured: bool = False
+    #: Prioritaetsgebuehren fuer Kauf und Verkauf zusammen.
+    fee_usd: float = DEFAULT_FEE_USD
 
     closed_at: float = 0.0
     exit_price: float = 0.0
@@ -150,7 +240,7 @@ class Position:
         value = self.multiple
         if value is None:
             return None
-        return min(value, TAKE_PROFIT)
+        return min(value, TAKE_PROFIT) * self.retention
 
     @property
     def broken(self) -> bool:
@@ -170,13 +260,8 @@ class Position:
         value = self.multiple
         return value is not None and value >= MAX_CREDIBLE_MULTIPLE
 
-    def result_usd(self, price: float | None = None) -> float | None:
-        """Gewinn oder Verlust in Dollar.
-
-        Gerechnet wird mit dem gedeckelten Vielfachen - siehe
-        ``credited_multiple``. Ohne den Deckel schrieb sich die Simulation
-        Ausfuehrungen gut, die es bei diesen Liquiditaeten nicht gibt.
-        """
+    def _capped_ratio(self, price: float | None) -> float | None:
+        """Das gedeckelte Kursverhaeltnis, mit dem gerechnet werden darf."""
         if not self.entry_price:
             return None
         if self.closed_at:
@@ -187,7 +272,52 @@ class Position:
             # Offene Position ohne aktuellen Kurs: hier ist tatsaechlich
             # nichts bekannt.
             return None
-        return self.size_usd * (min(ratio, TAKE_PROFIT) - 1.0)
+        return min(ratio, TAKE_PROFIT)
+
+    def gross_result_usd(self, price: float | None = None) -> float | None:
+        """Was der **Kurs** hergegeben haette, ohne Kosten.
+
+        Steht nicht als Ergebnis in der Bilanz, sondern daneben: erst der
+        Abstand zwischen dieser Zahl und ``result_usd`` zeigt, wieviel vom
+        Chart auf dem Weg zum Kontostand verlorengeht. Bei einer Strategie,
+        die auf 2x zielt, ist das keine Nebensache - die Kosten fressen
+        einen zweistelligen Prozentsatz des Ziels.
+        """
+        ratio = self._capped_ratio(price)
+        if ratio is None:
+            return None
+        return self.size_usd * (ratio - 1.0)
+
+    def cost_usd(self, price: float | None = None) -> float | None:
+        """Was Handel und Ausfuehrung kosten - Swap-Weg plus Gebuehren.
+
+        Der Swap-Anteil wird auf den **Ausstiegswert** gerechnet, nicht auf
+        den Einsatz: wer mit 100 USD einsteigt und bei 2x aussteigt, bewegt
+        auf dem Rueckweg 200 USD, und der Preiseinfluss haengt an dem, was
+        durch den Pool geht. Ein Gewinn kostet dadurch mehr als ein Verlust -
+        was unangenehm klingt, aber genau so passiert.
+        """
+        ratio = self._capped_ratio(price)
+        if ratio is None:
+            return None
+        return self.size_usd * ratio * (1.0 - self.retention) + self.fee_usd
+
+    def result_usd(self, price: float | None = None) -> float | None:
+        """Gewinn oder Verlust in Dollar, nach allen Kosten.
+
+        Gerechnet wird mit dem gedeckelten Vielfachen - siehe
+        ``credited_multiple``. Ohne den Deckel schrieb sich die Simulation
+        Ausfuehrungen gut, die es bei diesen Liquiditaeten nicht gibt.
+
+        Bei einer **offenen** Position stecken die Kosten beider Wege schon
+        drin, obwohl erst einer gegangen wurde. Das ist die ehrlichere
+        Anzeige: der Betrag beantwortet die Frage "was bekaeme ich, wenn ich
+        jetzt verkaufe", und dieses Verkaufen kostet eben noch etwas.
+        """
+        ratio = self._capped_ratio(price)
+        if ratio is None:
+            return None
+        return self.size_usd * (ratio * self.retention - 1.0) - self.fee_usd
 
     def decide(self, price: float, now: float) -> str:
         """Ob und warum diese Position jetzt geschlossen wird."""
@@ -304,6 +434,7 @@ class PaperBook:
         mcap: float | None = None,
         strength: int = 0,
         reasons: list[str] | None = None,
+        round_trip=None,
         now: float | None = None,
     ) -> Position | None:
         """Eroeffnet eine Position.
@@ -316,10 +447,18 @@ class PaperBook:
         Kein Nachkaufen: ein zweiter Einstieg in denselben Token waehrend die
         Position laeuft wuerde die Auswertung verfaelschen, weil derselbe
         Kursverlauf doppelt zaehlte.
+
+        Die Kosten werden **beim Einstieg** festgeschrieben, nicht beim
+        Ausstieg berechnet. Das ist Absicht: der Kauf-Verkauf-Test von
+        Jupiter laeuft ohnehin in der Tiefpruefung, und zwar genau in dem
+        Moment, in dem ein echter Kauf stattfaende. Spaeter nachzumessen
+        haette ihn zu einem anderen Zeitpunkt gemessen als dem, den er
+        beschreiben soll.
         """
         if not price or self.holds(mint):
             return None
         now = now or time.time()
+        measured = measured_retention(round_trip)
         position = Position(
             mint=mint,
             symbol=symbol,
@@ -331,6 +470,9 @@ class PaperBook:
             entry_mcap_usd=mcap,
             strength=strength,
             reasons=list(reasons or []),
+            retention=DEFAULT_RETENTION if measured is None else measured,
+            retention_measured=measured is not None,
+            fee_usd=_fee_usd(),
         )
         with self._lock:
             self.positions.append(position)
@@ -349,6 +491,7 @@ class PaperBook:
             mcap=candidate.mcap_usd if candidate else None,
             strength=call.strength if call else 0,
             reasons=list(call.reasons) if call else [],
+            round_trip=getattr(report, "round_trip", None),
             now=now,
         )
 
@@ -554,11 +697,21 @@ def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
     wins = [r for r in realised if r > 0]
     multiples = [m for m in (p.multiple for p in closed) if m is not None]
 
+    # Kosten der abgeschlossenen Positionen, getrennt ausgewiesen. Sie
+    # stecken bereits in ``result_usd`` - hier stehen sie noch einmal
+    # einzeln, weil sonst niemand sehen kann, wieviel von der Bilanz an der
+    # Strategie liegt und wieviel an der Ausfuehrung.
+    gross = [r for r in (p.gross_result_usd() for p in closed) if r is not None]
+    costs = [c for c in (p.cost_usd() for p in closed) if c is not None]
+    fees = sum(p.fee_usd for p in closed if p.result_usd() is not None)
+
     unrealised = 0.0
     for position in still_open:
         value = position.result_usd(prices.get(position.mint) or position.last_price)
         if value is not None:
             unrealised += value
+
+    measured = [p for p in positions if p.retention_measured]
 
     return {
         "open": len(still_open),
@@ -572,6 +725,21 @@ def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
         # Gesamteinsatz - der "Umsatz" der Simulation.
         "invested_usd": round(sum(p.size_usd for p in closed), 2),
         "turnover_usd": round(sum(p.size_usd for p in positions), 2),
+        #: Was ohne Handelskosten dagestanden haette. Die Differenz zu
+        #: ``result_usd`` ist ``costs_usd``.
+        "gross_result_usd": round(sum(gross), 2),
+        "costs_usd": round(sum(costs), 2),
+        #: Nur der Gebuehrenanteil. Der Rest der Kosten ist Swap-Weg.
+        "fees_usd": round(fees, 2),
+        #: Wie oft der Rueckweg wirklich gemessen wurde statt geschaetzt.
+        #: Ohne diese Zahl liesse sich nicht sagen, wie belastbar die
+        #: Kostenseite ist.
+        "measured": len(measured),
+        "avg_retention": (
+            round(sum(p.retention for p in positions) / len(positions), 4)
+            if positions
+            else None
+        ),
         #: Aussortiert wegen unbrauchbarem Einstiegskurs - benannt statt
         #: verschwiegen, sonst fehlt in der Bilanz still etwas.
         "broken": len(broken),

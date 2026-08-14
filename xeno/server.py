@@ -607,6 +607,14 @@ class Handler(BaseHTTPRequestHandler):
                     # Vielfachen ab, hat der Deckel gegriffen - und das
                     # gehoert sichtbar, nicht stillschweigend abgezogen.
                     "credited_multiple": position.credited_multiple,
+                    # Die Kostenseite. ``result_usd`` ist schon netto -
+                    # diese Felder sagen, was dafuer abgezogen wurde und ob
+                    # der Rueckweg gemessen oder geschaetzt war.
+                    "gross_result_usd": position.gross_result_usd(price),
+                    "cost_usd": position.cost_usd(price),
+                    "retention": position.retention,
+                    "retention_measured": position.retention_measured,
+                    "fee_usd": position.fee_usd,
                     "strength": position.strength,
                 }
             )

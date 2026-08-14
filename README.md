@@ -932,6 +932,65 @@ zweite Abfrage je Position.
 Die Trefferbilanz steht ab sofort **neben jedem Call**. Ohne sie liest sich
 ein Vorschlag wie eine Gewissheit, und genau das ist er nicht.
 
+### Was der Handel kostet
+
+Bis vor kurzem rechnete die Bilanz, als koste Handeln nichts: Einstiegskurs,
+Ausstiegskurs, Differenz. Das ist bei einer Strategie, die auf 2x zielt, kein
+Rundungsfehler.
+
+Gemessen wurde es über Jupiter — an neun Token des `early`-Profils wurde ein
+sofortiger Kauf **und** Verkauf angefragt und verglichen, was vom Einsatz
+übrig bleibt:
+
+```
+Faucat     3.7 %      TRENCHES   5.6 %      Frokiro    4.4 %
+CUBS       5.6 %      COLQUAK    0.8 %      Tortuga    5.0 %
+omg        4.9 %      Tortuga    5.9 %      Tortuga    1.9 %
+
+n = 9   Median 4.4 %   Mittel 4.0 %   Spanne 0.8 – 5.6 %
+```
+
+Die Spanne hängt fast nur an der Pooltiefe: der Token mit 70.000 $ Liquidität
+kostete 0,8 %, die mit 3.000 $ über 5 %. Genau die dünnen Pools sucht das
+`early`-Profil.
+
+Zwei Posten stehen getrennt, damit sich die gemessene Zahl nicht hinter der
+geschätzten versteckt:
+
+| Posten | Woher | Höhe |
+|---|---|---|
+| **Swap-Weg** | von Jupiter beim Einstieg gemessen | 0,8 – 5,6 %, Median 4,4 % |
+| **Netzgebühr** | Annahme, über `XENO_FEE_USD` änderbar | 0,40 $ je Position (2 × 0,001 SOL) |
+
+Der Swap-Weg wird auf den **Ausstiegswert** gerechnet, nicht auf den Einsatz:
+wer mit 100 $ einsteigt und bei 2x aussteigt, bewegt auf dem Rückweg 200 $
+durch den Pool. Ein Gewinn kostet dadurch mehr als ein Verlust — was
+unangenehm klingt, aber genau so passiert. Aus 100 $ auf 2x werden damit
+**+90,80 $** statt +100 $, aus einer Halbierung **−52,60 $** statt −50 $.
+
+Was das ausmacht, zeigt die erste durchgemessene Nacht: **−9.686 $** wurden zu
+**−14.739 $**, also −7,1 % statt −10,8 % auf den Einsatz. Ein Drittel des
+Verlusts war schlicht nicht sichtbar.
+
+Zwei Einschränkungen gehören dazu, damit die Zahl nicht genauer aussieht als
+sie ist. Gemessen wird mit **0,1 SOL**, gehandelt werden 100 $ (~0,5 SOL) — der
+Preiseinfluss der echten Order ist eher höher. Und gemessen wird **beim
+Einstieg**; ob der Pool beim Ausstieg noch so tief ist, weiß beim Kauf niemand.
+Bei einem Ausstieg an der Verlustgrenze ist er es regelmäßig nicht.
+
+Zu den abgelehnten Token gibt es nie eine Messung — sie werden nie tief
+geprüft. Sie bekommen den Median der gemessenen, damit sich beide Gruppen im
+Mittel nicht durch die Kostenannahme unterscheiden. Sie mit 0 % zu rechnen
+wäre die schlechteste Variante: dann sähe ausgerechnet der Maßstab günstiger
+aus als das, was er messen soll. Wie viele Positionen gemessen und wie viele
+geschätzt sind, steht in `xeno stats` und im Dashboard:
+
+```
+Ohne Kosten      -640.00 USD
+Handelskosten    -176.08 USD (4.4% vom Einsatz), davon 16.00 Gebuehren
+Rueckweg         im Schnitt 95.3% | 14 von 40 gemessen, Rest geschaetzt
+```
+
 ## Aufwach-Erkennung — die zweite Chance
 
 Der Fall, den XENO vorher nicht sehen konnte: ein Coin wird geprüft, es passiert
@@ -1273,6 +1332,7 @@ echo "XENO_RPC_URL=https://..." >> .env
 | `XENO_MIN_BUYERS_H1` | 25 | eindeutige Käufer in 1 h |
 | `XENO_MAX_TOP10_PCT` | 30 | ab hier gilt die Verteilung als zu konzentriert |
 | `XENO_MIN_LP_LOCKED_PCT` | 90 | geforderter Anteil gesicherter LP-Token |
+| `XENO_FEE_USD` | 0.40 | Netzgebühr je Papierposition, Kauf und Verkauf zusammen |
 
 Kurzfristig auch direkt auf der Kommandozeile:
 
@@ -1333,7 +1393,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 695 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 717 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

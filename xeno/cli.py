@@ -642,6 +642,27 @@ def _print_paper(state_path=None) -> None:
                 f"  Median           {result['median_multiple']:.2f}x  "
                 f"| bester {result['best_multiple']:.2f}x"
             )
+        # Die Kostenseite. Sie steckt schon im Ergebnis - hier steht sie
+        # noch einmal einzeln, weil sonst niemand sehen kann, wieviel an der
+        # Strategie liegt und wieviel am Handel selbst.
+        if result["costs_usd"]:
+            anteil = ""
+            if result["invested_usd"]:
+                anteil = (
+                    f" ({result['costs_usd'] / result['invested_usd'] * 100:.1f}% "
+                    "vom Einsatz)"
+                )
+            print(f"  Ohne Kosten      {result['gross_result_usd']:+.2f} USD")
+            print(
+                f"  Handelskosten    -{result['costs_usd']:.2f} USD{anteil}, "
+                f"davon {result['fees_usd']:.2f} Gebuehren"
+            )
+            gemessen = result["measured"]
+            gesamt = result["closed"] + result["open"]
+            print(
+                f"  Rueckweg         im Schnitt {result['avg_retention'] * 100:.1f}% "
+                f"| {gemessen} von {gesamt} gemessen, Rest geschaetzt"
+            )
         if result["reasons"]:
             grund = ", ".join(f"{k}: {v}" for k, v in sorted(result["reasons"].items()))
             print(f"  Ausstiege        {grund}")

@@ -395,6 +395,7 @@ def build_report(data: TokenData, settings: Settings) -> RiskReport:
         structure=data.structure,
         errors=list(data.errors),
         lookup_failed=data.lookup_failed,
+        round_trip=data.round_trip,
     )
     report.findings = run_checks(data, settings.risk)
     return report

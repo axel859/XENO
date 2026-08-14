@@ -17,6 +17,7 @@ from conftest import MINT
 
 from xeno.calls import Call, Signal
 from xeno.paper import (
+    DEFAULT_RETENTION,
     DEFAULT_SIZE_USD,
     MAX_HOLD_SECONDS,
     STOP_LOSS,
@@ -38,12 +39,30 @@ def call(mint: str = MINT, price: float = 1.0, strength: int = 3) -> Call:
     )
 
 
-def buy(book, mint: str = MINT, price: float = 1.0, **kwargs):
-    """Kurzform fuer die Tests - ein Einstieg mit sinnvollen Vorgaben."""
+def buy(book, mint: str = MINT, price: float = 1.0, *, costs: bool = False, **kwargs):
+    """Kurzform fuer die Tests - ein Einstieg mit sinnvollen Vorgaben.
+
+    Ohne ``costs=True`` werden die Handelskosten abgeschaltet. Das ist
+    Absicht und keine Bequemlichkeit: die Tests hier pruefen Regeln, und
+    eine Erwartung von ``-50.00`` sagt darueber mehr aus als ``-52.60``.
+    Die Kosten sind in ``TestKosten`` die gemessene Groesse, dort stehen sie
+    ungerundet.
+    """
     kwargs.setdefault("symbol", "TEST")
     kwargs.setdefault("group", "OK")
     kwargs.setdefault("now", NOW)
-    return book.enter(mint, price, **kwargs)
+    position = book.enter(mint, price, **kwargs)
+    if position is not None and not costs:
+        position.retention = 1.0
+        position.fee_usd = 0.0
+    return position
+
+
+def costless(**kwargs) -> Position:
+    """Eine Position ohne Handelskosten - siehe ``buy``."""
+    kwargs.setdefault("retention", 1.0)
+    kwargs.setdefault("fee_usd", 0.0)
+    return Position(**kwargs)
 
 
 @pytest.fixture
@@ -393,7 +412,7 @@ class TestKaputterEinstieg:
     """
 
     def broken_position(self) -> Position:
-        position = Position(
+        position = costless(
             mint="kaputt", symbol="X", group="CONTROL",
             entry_price=1e-12, opened_at=1.0,
         )
@@ -403,7 +422,7 @@ class TestKaputterEinstieg:
         return position
 
     def good_position(self, multiple: float = 2.0) -> Position:
-        position = Position(
+        position = costless(
             mint="gut", symbol="Y", group="OK", entry_price=1.0, opened_at=1.0
         )
         position.exit_price = multiple
@@ -467,7 +486,7 @@ class TestDeckel:
 
     def closed(self, tmp_path, multiple: float) -> PaperBook:
         book = PaperBook(tmp_path / "paper.json")
-        position = Position(
+        position = costless(
             mint="m", symbol="X", group="OK", entry_price=1.0, opened_at=1.0
         )
         position.exit_price = multiple
@@ -502,7 +521,7 @@ class TestDeckel:
         random.seed(3)
         book = PaperBook(tmp_path / "paper.json")
         for i in range(69):
-            position = Position(
+            position = costless(
                 mint=f"m{i}", symbol="X", group="AVOID",
                 entry_price=1.0, opened_at=1.0,
             )
@@ -516,6 +535,238 @@ class TestDeckel:
         grenze = result["closed"] * DEFAULT_SIZE_USD * (TAKE_PROFIT - 1.0)
         assert result["result_usd"] <= grenze
 
+
+
+class TestKosten:
+    """Was zwischen Chart und Kontostand steht.
+
+    Bis hierher rechnete die Bilanz, als koste Handeln nichts. Das ist bei
+    einer Strategie, die auf 2x zielt, kein Rundungsfehler: gemessen an neun
+    Token des early-Profils frisst allein der Swap-Weg im Median 4,4% -
+    hochgerechnet auf eine echte Nacht mit 1.360 Positionen waren das
+    5.053 USD, also mehr als ein Drittel des ausgewiesenen Verlusts.
+
+    Zwei Posten stecken darin. Der **Swap-Weg** ist Gebuehr plus
+    Preiseinfluss und wird von Jupiter gemessen; die **Netzgebuehr** ist
+    eine Annahme. Beide stehen getrennt, damit sich die gemessene Zahl nicht
+    hinter der geschaetzten versteckt.
+    """
+
+    def make(self, multiple: float, **kwargs) -> Position:
+        position = Position(
+            mint="m", symbol="X", group="OK", entry_price=1.0, opened_at=1.0, **kwargs
+        )
+        position.exit_price = multiple
+        position.closed_at = 2.0
+        position.exit_reason = "ziel"
+        return position
+
+    def test_a_win_is_smaller_than_the_chart_says(self):
+        """100 USD auf 2x: der Kurs gibt +100 her, ankommen 90,80.
+
+        Fast ein Zehntel des Gewinns bleibt im Pool und im Netz. Bei einer
+        Strategie, die auf 2x zielt, ist das keine Nebensache.
+        """
+        position = self.make(2.0, retention=0.956, fee_usd=0.40)
+        assert position.gross_result_usd() == pytest.approx(100.0)
+        assert position.result_usd() == pytest.approx(90.8)
+
+    def test_a_loss_is_bigger_than_the_chart_says(self):
+        position = self.make(0.5, retention=0.956, fee_usd=0.40)
+        assert position.gross_result_usd() == pytest.approx(-50.0)
+        assert position.result_usd() == pytest.approx(-52.6)
+
+    def test_costs_are_exactly_the_difference(self):
+        """Sonst waere die getrennte Ausweisung eine zweite, eigene
+        Rechnung - und irgendwann wichen beide voneinander ab."""
+        for multiple in (0.0, 0.5, 1.0, 2.0, 9.0):
+            position = self.make(multiple, retention=0.93, fee_usd=0.4)
+            assert position.cost_usd() == pytest.approx(
+                position.gross_result_usd() - position.result_usd()
+            )
+
+    def test_a_win_costs_more_than_a_loss(self):
+        """Der Rueckweg bewegt bei 2x das Doppelte durch den Pool."""
+        gewinn = self.make(2.0, retention=0.95, fee_usd=0.0)
+        verlust = self.make(0.5, retention=0.95, fee_usd=0.0)
+        assert gewinn.cost_usd() > verlust.cost_usd()
+
+    def test_a_total_loss_still_costs_the_fee(self):
+        """Wer bei null aussteigt, verliert den Einsatz und hat trotzdem
+        zweimal Netzgebuehr gezahlt."""
+        position = self.make(0.0, retention=0.956, fee_usd=0.40)
+        assert position.result_usd() == pytest.approx(-100.4)
+
+    def test_the_cap_applies_before_the_costs(self):
+        """Sonst wuerden Kosten auf einen Kurs gerechnet, der nie
+        ausgefuehrt worden waere."""
+        assert self.make(9.0, retention=0.956, fee_usd=0.4).result_usd() == (
+            pytest.approx(self.make(2.0, retention=0.956, fee_usd=0.4).result_usd())
+        )
+
+    def test_the_arithmetic_limit_still_holds(self, tmp_path):
+        """Der Deckel darf durch die Kosten nicht durchlaessig werden - mit
+        Kosten muss die Grenze sogar unterschritten werden."""
+        book = PaperBook(tmp_path / "paper.json")
+        for i in range(20):
+            position = self.make(9.0, retention=0.956, fee_usd=0.4)
+            position.mint = f"m{i}"
+            book.positions.append(position)
+        result = book.summary()
+        grenze = result["closed"] * DEFAULT_SIZE_USD * (TAKE_PROFIT - 1.0)
+        assert result["result_usd"] < grenze
+
+    def test_an_open_position_already_carries_the_way_out(self):
+        """Der Betrag beantwortet "was bekaeme ich, wenn ich jetzt
+        verkaufe" - und dieses Verkaufen kostet noch etwas."""
+        position = Position(
+            mint="m", entry_price=1.0, opened_at=1.0, retention=0.9, fee_usd=0.4
+        )
+        assert position.result_usd(1.0) == pytest.approx(-10.4)
+
+
+class TestGemessenerRueckweg:
+    """Gemessen schlaegt geschaetzt - aber nur, wenn die Messung taugt."""
+
+    def trip(self, retention: float | None):
+        from xeno.sources.jupiter import RoundTrip
+
+        if retention is None:
+            return RoundTrip(lamports_in=1_000, error="keine Verkaufs-Route")
+        return RoundTrip(
+            buy_ok=True,
+            sell_ok=True,
+            lamports_in=1_000_000,
+            lamports_out=int(1_000_000 * retention),
+        )
+
+    def test_the_measured_value_is_used(self, book):
+        position = buy(book, costs=True, round_trip=self.trip(0.88))
+        assert position.retention == pytest.approx(0.88)
+        assert position.retention_measured is True
+
+    def test_without_a_measurement_the_default_applies(self, book):
+        from xeno.paper import DEFAULT_RETENTION
+
+        position = buy(book, costs=True)
+        assert position.retention == DEFAULT_RETENTION
+        assert position.retention_measured is False
+
+    def test_a_failed_trip_does_not_count_as_measured(self, book):
+        """Sonst gaebe sich eine Schaetzung als Messung aus - und die Frage
+        "wie belastbar ist die Kostenseite" waere nicht mehr zu beantworten."""
+        from xeno.paper import DEFAULT_RETENTION
+
+        position = buy(book, costs=True, round_trip=self.trip(None))
+        assert position.retention == DEFAULT_RETENTION
+        assert position.retention_measured is False
+
+    def test_free_money_is_rejected(self, book):
+        """Bei frischen Bonding-Curve-Pools liefert Jupiter Werte ueber 1.0,
+        weil Kauf- und Verkaufsseite gegen unterschiedlich aktuelle
+        Poolstaende gerechnet werden. Wer die uebernimmt, eroeffnet eine
+        Position mit Gewinn, bevor sich der Kurs bewegt hat."""
+        from xeno.paper import DEFAULT_RETENTION
+
+        for wert in (1.0, 1.02, 1.4):
+            book.positions.clear()
+            position = buy(book, costs=True, round_trip=self.trip(wert))
+            assert position.retention == DEFAULT_RETENTION, wert
+            assert position.retention_measured is False, wert
+
+    def test_a_bad_measurement_is_taken_seriously(self, book):
+        """Wenn Jupiter sagt, es kaeme die Haelfte zurueck, ist das das
+        Ergebnis und kein Ausreisser."""
+        position = buy(book, costs=True, round_trip=self.trip(0.5))
+        assert position.retention == pytest.approx(0.5)
+        assert position.result_usd(1.0) == pytest.approx(-50.4)
+
+    def test_the_report_hands_it_through(self, book):
+        """Der Punkt der ganzen Aenderung - sonst greift sie im Betrieb
+        nirgends."""
+        from xeno.models import RiskReport, TokenCandidate
+
+        report = RiskReport(
+            mint="m",
+            symbol="X",
+            candidate=TokenCandidate(mint="m", symbol="X", price_usd=1.0),
+            round_trip=self.trip(0.9),
+        )
+        position = book.enter_report(report, now=NOW)
+        assert position.retention == pytest.approx(0.9)
+        assert position.retention_measured is True
+
+    def test_the_control_group_gets_the_default(self, book):
+        """Abgelehnte Token werden nie tief geprueft, es gibt zu ihnen also
+        nie eine Messung. Sie mit 0% Kosten zu rechnen waere die
+        schlechteste Variante: dann saehe ausgerechnet der Massstab
+        guenstiger aus als das, was er messen soll."""
+        from xeno.paper import DEFAULT_RETENTION
+
+        position = buy(book, costs=True, group="CONTROL")
+        assert position.retention == DEFAULT_RETENTION
+
+
+class TestKostenInDerBilanz:
+    """Die Kosten stecken im Ergebnis - und stehen daneben noch einmal
+    einzeln. Ohne das kann niemand sehen, wieviel an der Strategie liegt und
+    wieviel am Handel selbst."""
+
+    def filled(self, book):
+        buy(book, "a", costs=True)
+        buy(book, "b", costs=True)
+        book.update({"a": 2.0, "b": 0.5}, now=NOW + 60)
+        return book.summary()
+
+    def test_gross_and_net_are_both_reported(self, book):
+        result = self.filled(book)
+        assert result["gross_result_usd"] == pytest.approx(50.0)
+        assert result["result_usd"] < result["gross_result_usd"]
+
+    def test_the_difference_is_the_reported_cost(self, book):
+        result = self.filled(book)
+        assert result["costs_usd"] == pytest.approx(
+            result["gross_result_usd"] - result["result_usd"]
+        )
+
+    def test_the_fee_share_is_named_separately(self, book):
+        """Die Gebuehr ist eine Annahme, der Swap-Weg gemessen. Zusammen
+        ausgewiesen liesse sich das eine nicht vom anderen trennen."""
+        from xeno.paper import DEFAULT_FEE_USD
+
+        result = self.filled(book)
+        assert result["fees_usd"] == pytest.approx(2 * DEFAULT_FEE_USD)
+        assert result["fees_usd"] < result["costs_usd"]
+
+    def test_how_many_were_measured_is_visible(self, book):
+        from xeno.sources.jupiter import RoundTrip
+
+        trip = RoundTrip(
+            buy_ok=True, sell_ok=True, lamports_in=1_000_000, lamports_out=900_000
+        )
+        buy(book, "a", costs=True, round_trip=trip)
+        buy(book, "b", costs=True)
+        result = book.summary()
+        assert result["measured"] == 1
+        assert result["avg_retention"] == pytest.approx((0.9 + DEFAULT_RETENTION) / 2)
+
+    def test_an_empty_book_says_nothing_about_costs(self, book):
+        result = book.summary()
+        assert result["costs_usd"] == 0
+        assert result["measured"] == 0
+        assert result["avg_retention"] is None
+
+    def test_the_fee_can_be_changed(self, book, monkeypatch):
+        """Die Gebuehr haengt an der Netzauslastung - wer eine bessere Zahl
+        hat, soll sie einsetzen koennen."""
+        monkeypatch.setenv("XENO_FEE_USD", "1.25")
+        assert buy(book, costs=True).fee_usd == pytest.approx(1.25)
+
+    def test_a_nonsense_fee_falls_back(self, book, monkeypatch):
+        from xeno.paper import DEFAULT_FEE_USD
+
+        monkeypatch.setenv("XENO_FEE_USD", "viel")
+        assert buy(book, costs=True).fee_usd == DEFAULT_FEE_USD
 
 
 class TestBuchPfad:

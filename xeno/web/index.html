@@ -667,6 +667,11 @@ function usd(v) {
 
 function pct(v) { return v == null ? '–' : (v >= 0 ? '+' : '') + v.toFixed(0) + '%'; }
 
+/* Grün bei Plus, rot bei Minus, neutral wenn nichts bekannt ist. Null ist
+   hier bewusst kein Minus: eine Position ohne Ergebnis hat keins, sie hat
+   keinen Verlust. */
+function plCls(v) { return v == null ? '' : (v >= 0 ? 'plus' : 'minus'); }
+
 function num(v) {
   if (v == null) return '–';
   return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v));
@@ -806,7 +811,7 @@ function linkRow(m) {
 // Marktwert nichts darüber, ob die Position läuft.
 function positionRow(p) {
   if (!p) return '';
-  const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
+  const cls = plCls(p.result_usd);
   const status = p.open ? '' : ` · ${esc(p.exit_reason)}`;
   return `<div class="pos">
     <span>${money(p.entry_mcap_usd)}</span>
@@ -1119,7 +1124,6 @@ function renderTrades(d) {
   const best = closedRows.length
     ? closedRows.reduce((a, b) => (b[1].result_usd > a[1].result_usd ? b : a))[0]
     : null;
-  const plCls = v => v == null ? '' : (v >= 0 ? 'plus' : 'minus');
 
   box.innerHTML = `
     <div class="stats">
@@ -1132,6 +1136,16 @@ function renderTrades(d) {
     <div class="note">100 $ je Token, raus bei 2x, −40 % oder nach 24 h. Kein echtes Geld.
       <b>Abgelehnt</b> = vom Vorfilter aussortiert, drei zufällige je Durchlauf. Das ist
       der Maßstab: laufen sie besser, filtert der Bot falsch.</div>
+
+    ${t.costs_usd ? `<div class="note">Das Ergebnis ist <b>nach Kosten</b>. Ohne sie
+      stünden hier ${usd(t.gross_result_usd)} — der Handel selbst kostete
+      <b>$${t.costs_usd.toFixed(2)}</b>${t.invested_usd
+        ? ' (' + (t.costs_usd / t.invested_usd * 100).toFixed(1) + ' % vom Einsatz)' : ''},
+      davon $${(t.fees_usd || 0).toFixed(2)} Netzgebühren, der Rest Swap-Weg.
+      Vom Einsatz überleben Kauf und Verkauf im Schnitt
+      <b>${((t.avg_retention == null ? 1 : t.avg_retention) * 100).toFixed(1)} %</b> —
+      bei ${t.measured || 0} von ${(t.closed || 0) + (t.open || 0)} Positionen gemessen,
+      sonst geschätzt.</div>` : ''}
 
     <div class="wrap-x"><table class="trades">
       <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
@@ -1171,7 +1185,7 @@ const EXIT_LABEL = {
 function openTrade(i) {
   const p = tradeList[i];
   if (!p) return;
-  const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
+  const cls = plCls(p.result_usd);
   // Gerechnet wird mit dem gedeckelten Vielfachen — sonst schriebe sich die
   // Simulation Ausführungen gut, die es bei diesen Liquiditäten nicht gibt.
   const used = p.credited_multiple != null ? p.credited_multiple : p.multiple;
@@ -1211,6 +1225,25 @@ function openTrade(i) {
       verkauft wurde bei <b>${p.multiple.toFixed(1)}x</b>. Die Regel lässt hier
       etwas liegen — dafür greift sie auch nach unten.</div>` : ''}
 
+    <h3>Was der Handel kostet</h3>
+    <div class="figures">
+      <div><b class="${plCls(p.gross_result_usd)}">${usd(p.gross_result_usd)}</b><span>nur Kurs</span></div>
+      <div><b class="minus">${p.cost_usd == null ? '–' : '−$' + p.cost_usd.toFixed(2)}</b><span>Kosten</span></div>
+      <div><b>${((1 - p.retention) * 100).toFixed(1)} %</b><span>Swap-Weg</span></div>
+      <div><b>$${(p.fee_usd || 0).toFixed(2)}</b><span>Gebühren</span></div>
+    </div>
+    <div class="note">${p.retention_measured
+      ? `Der Swap-Weg ist <b>gemessen</b>: Jupiter wurde beim Einstieg gefragt, was ein
+         sofortiger Kauf und Verkauf übrig ließe — <b>${(p.retention * 100).toFixed(1)} %</b>
+         vom Einsatz. Darin stecken Swap-Gebühr und Preiseinfluss. Gemessen wurde mit
+         0,1 SOL, gehandelt werden 100 $; bei der größeren Order ist der Preiseinfluss
+         eher höher.`
+      : `Der Swap-Weg ist <b>geschätzt</b> (${(p.retention * 100).toFixed(1)} %). Zu diesem
+         Token liegt keine eigene Messung vor — abgelehnte Token werden nie tief geprüft.
+         Der Wert ist der Median aus neun gemessenen Token.`}
+      Die Netzgebühr ist in beiden Fällen eine Annahme: rund 0,001 SOL je Transaktion,
+      zweimal.</div>
+
     <h3>${p.open ? 'Ausstiegsregel' : 'Ausstieg'}</h3>
     ${p.open
       ? `<div class="finding info">Verkauft wird bei 2x, bei −40 % oder nach 24 Stunden —
@@ -1235,7 +1268,7 @@ function openTrade(i) {
    neben dem Ergebnis: ohne den Einstiegswert sagt der aktuelle Marktwert
    nichts darüber, ob die Position läuft. */
 function posRow(p, i) {
-  const cls = p.result_usd == null ? '' : (p.result_usd >= 0 ? 'plus' : 'minus');
+  const cls = plCls(p.result_usd);
   return `<div class="r" onclick="openTrade(${i})">
     <span class="bar v-${esc(p.group)}"></span>
     <span class="r-name">

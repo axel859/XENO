@@ -386,6 +386,10 @@ class RiskReport:
     errors: list[str] = field(default_factory=list)
     #: Der Mint-Account war nicht lesbar - Budget alle, RPC ausgefallen.
     lookup_failed: bool = False
+    #: Ergebnis des Kauf-Verkauf-Tests. Wird zum Einstieg im Papierhandel
+    #: festgehalten: die Quote enthaelt Swap-Gebuehr und Preiseinfluss, also
+    #: genau das, was zwischen Kurs und Kontostand steht.
+    round_trip: Any | None = None
 
     def add(self, finding: Finding) -> None:
         self.findings.append(finding)
