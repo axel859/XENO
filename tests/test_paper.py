@@ -755,6 +755,58 @@ class TestKostenInDerBilanz:
         assert result["costs_usd"] == 0
         assert result["measured"] == 0
         assert result["avg_retention"] is None
+        assert result["measured_retention"] is None
+
+    def test_the_measured_median_stands_on_its_own(self, book):
+        """Der Schnitt ueber alle verdeckt genau das, wofuer er da ist.
+
+        Am ersten echten Lauf aufgefallen: 372 von 2143 gemessen, Schnitt
+        94.4% - und weil die uebrigen 1771 auf dem Schaetzwert 95.6%
+        standen, lagen die gemessenen rechnerisch bei rund 88.7%. Der
+        Schaetzwert war also gut doppelt so guenstig wie die Wirklichkeit,
+        und die eine ausgewiesene Zahl zeigte davon nichts.
+        """
+        from xeno.sources.jupiter import RoundTrip
+
+        def trip(retention):
+            return RoundTrip(
+                buy_ok=True,
+                sell_ok=True,
+                lamports_in=1_000_000,
+                lamports_out=int(1_000_000 * retention),
+            )
+
+        for i, wert in enumerate([0.80, 0.85, 0.90]):
+            buy(book, f"gemessen{i}", costs=True, round_trip=trip(wert))
+        for i in range(20):
+            buy(book, f"geschaetzt{i}", costs=True)
+
+        result = book.summary()
+        assert result["measured"] == 3
+        assert result["measured_retention"] == pytest.approx(0.85)
+        # Der Schnitt ueber alle liegt deutlich darueber - genau deshalb
+        # steht der gemessene Median daneben.
+        assert result["avg_retention"] > result["measured_retention"] + 0.05
+
+    def test_the_median_ignores_a_single_outlier(self, book):
+        """Bewusst der Median, nicht der Schnitt: ein einzelner Honeypot
+        wuerde sonst den Kostenansatz fuer alle anderen verschieben."""
+        from xeno.sources.jupiter import RoundTrip
+
+        werte = [0.94, 0.95, 0.96, 0.05]
+        for i, wert in enumerate(werte):
+            buy(
+                book,
+                f"m{i}",
+                costs=True,
+                round_trip=RoundTrip(
+                    buy_ok=True,
+                    sell_ok=True,
+                    lamports_in=1_000_000,
+                    lamports_out=int(1_000_000 * wert),
+                ),
+            )
+        assert book.summary()["measured_retention"] == pytest.approx(0.945)
 
     def test_the_fee_can_be_changed(self, book, monkeypatch):
         """Die Gebuehr haengt an der Netzauslastung - wer eine bessere Zahl
@@ -767,6 +819,36 @@ class TestKostenInDerBilanz:
 
         monkeypatch.setenv("XENO_FEE_USD", "viel")
         assert buy(book, costs=True).fee_usd == DEFAULT_FEE_USD
+
+
+class TestSchaetzwertNachziehen:
+    """Der Schaetzwert muss sich aus dem eigenen Buch nachziehen lassen.
+
+    Neun Handmessungen waren zu wenig: der erste echte Lauf ergab bei 372
+    gemessenen Positionen rund 88.7% statt der angesetzten 95.6%. Ohne
+    Schalter muesste dafuer Code geaendert werden - und dann bliebe der
+    Wert stehen, weil sich niemand traut.
+    """
+
+    def test_the_estimate_can_be_pulled_from_the_own_book(self, book, monkeypatch):
+        monkeypatch.setenv("XENO_RETENTION", "0.887")
+        assert buy(book, costs=True).retention == pytest.approx(0.887)
+
+    def test_it_only_affects_the_estimate_not_the_measurement(self, book, monkeypatch):
+        """Sonst wuerde eine Einstellung eine Messung ueberschreiben."""
+        from xeno.sources.jupiter import RoundTrip
+
+        monkeypatch.setenv("XENO_RETENTION", "0.5")
+        trip = RoundTrip(
+            buy_ok=True, sell_ok=True, lamports_in=1_000_000, lamports_out=930_000
+        )
+        assert buy(book, costs=True, round_trip=trip).retention == pytest.approx(0.93)
+
+    def test_free_money_is_rejected_here_too(self, book, monkeypatch):
+        for wert in ("1.0", "1.5", "0", "-0.2", "umsonst"):
+            book.positions.clear()
+            monkeypatch.setenv("XENO_RETENTION", wert)
+            assert buy(book, costs=True).retention == DEFAULT_RETENTION, wert
 
 
 class TestBuchPfad:

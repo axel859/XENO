@@ -56,6 +56,14 @@ MAX_HOLD_SECONDS = 24 * 3600
 #: was er messen soll. Der Standardwert ist der Median genau der Messungen,
 #: die die geprueften Token liefern - damit unterscheiden sich beide Gruppen
 #: im Mittel nicht durch die Kostenannahme, sondern nur durch die Streuung.
+#:
+#: **Neun Messungen sind wenig, und der erste echte Lauf zeigt das.** Bei 372
+#: gemessenen Positionen lag der Schnitt der Gemessenen bei rund 88.7%, also
+#: gut 11% Verlust statt 4.4%. Der Wert hier ist damit zu freundlich - und
+#: zwar ausgerechnet fuer die Vergleichsgruppe, zu der es nie eine Messung
+#: gibt. Nachgezogen wird er nicht auf Verdacht, sondern aus dem eigenen
+#: Buch: ``xeno stats`` weist den gemessenen Median getrennt aus, und ueber
+#: ``XENO_RETENTION`` laesst er sich einsetzen, ohne Code zu aendern.
 DEFAULT_RETENTION = 0.956
 
 #: Was das Durchbringen einer Transaktion kostet, fuer Kauf und Verkauf
@@ -81,6 +89,29 @@ def _fee_usd() -> float:
         except ValueError:
             pass
     return DEFAULT_FEE_USD
+
+
+def default_retention() -> float:
+    """Der Schaetzwert fuer den Rueckweg, ueber ``XENO_RETENTION`` setzbar.
+
+    Gedacht zum Nachziehen aus dem eigenen Buch: ``xeno stats`` weist den
+    gemessenen Median getrennt aus, und wenn der dauerhaft unter dem
+    Schaetzwert liegt, gehoert er hier eingesetzt. Ohne diesen Schalter
+    muesste dafuer Code geaendert werden - und dann bliebe der Wert stehen,
+    weil sich niemand traut.
+
+    Werte ab 1.0 werden verworfen. Sie hiessen, dass Handeln nichts kostet
+    oder Geld einbringt; der Zweck dieser Zahl ist das Gegenteil.
+    """
+    raw = os.environ.get("XENO_RETENTION", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            return DEFAULT_RETENTION
+        if 0.0 < value < 1.0:
+            return value
+    return DEFAULT_RETENTION
 
 
 def measured_retention(round_trip) -> float | None:
@@ -459,6 +490,7 @@ class PaperBook:
             return None
         now = now or time.time()
         measured = measured_retention(round_trip)
+        fallback = default_retention()
         position = Position(
             mint=mint,
             symbol=symbol,
@@ -470,7 +502,7 @@ class PaperBook:
             entry_mcap_usd=mcap,
             strength=strength,
             reasons=list(reasons or []),
-            retention=DEFAULT_RETENTION if measured is None else measured,
+            retention=fallback if measured is None else measured,
             retention_measured=measured is not None,
             fee_usd=_fee_usd(),
         )
@@ -739,6 +771,19 @@ def _stats(positions: list[Position], prices: dict[str, float]) -> dict:
             round(sum(p.retention for p in positions) / len(positions), 4)
             if positions
             else None
+        ),
+        #: Der Median **nur der gemessenen** Positionen.
+        #:
+        #: Steht getrennt, weil der Schnitt darueber sonst genau das
+        #: verdeckt, wofuer er da ist. Am ersten echten Lauf aufgefallen:
+        #: 372 von 2143 gemessen, Schnitt 94.4% - und weil die uebrigen 1771
+        #: auf dem Schaetzwert 95.6% standen, ergab sich fuer die gemessenen
+        #: rechnerisch rund 88.7%. Der Schaetzwert war also gut doppelt so
+        #: guenstig wie die Wirklichkeit, und die eine ausgewiesene Zahl
+        #: zeigte davon nichts. Wer den Standardwert nachziehen will,
+        #: braucht genau diesen Median.
+        "measured_retention": (
+            round(median([p.retention for p in measured]), 4) if measured else None
         ),
         #: Aussortiert wegen unbrauchbarem Einstiegskurs - benannt statt
         #: verschwiegen, sonst fehlt in der Bilanz still etwas.

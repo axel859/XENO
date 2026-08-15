@@ -619,11 +619,19 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
 
+        from .paper import default_retention
+
         return {
             "available": True,
             "total": book.summary(prices),
             "groups": book.by_group(prices),
             "positions": positions[:200],
+            # Der Schaetzwert selbst, damit die Oberflaeche ihn nicht ein
+            # zweites Mal fuehren muss. Sonst stuende die Zahl an zwei
+            # Stellen und wuerde beim naechsten Nachziehen an einer davon
+            # vergessen - ausgerechnet bei dem Wert, dessen Zweck der
+            # Vergleich mit der Messung ist.
+            "default_retention": default_retention(),
         }
 
     def _token_detail(self, mint: str) -> dict[str, Any]:

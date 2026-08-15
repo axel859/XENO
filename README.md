@@ -989,7 +989,45 @@ geschätzt sind, steht in `xeno stats` und im Dashboard:
 Ohne Kosten      -640.00 USD
 Handelskosten    -176.08 USD (4.4% vom Einsatz), davon 16.00 Gebuehren
 Rueckweg         im Schnitt 95.3% | 14 von 40 gemessen, Rest geschaetzt
+davon gemessen   Median 88.7% (geschaetzt wird mit 95.6%)
+                 Achtung: gemessen teurer als geschaetzt - die Bilanz ist
+                 eher zu freundlich
 ```
+
+### Neun Messungen waren zu wenig
+
+Die letzte Zeile ist kein Beispiel, sondern der erste echte Lauf: **372
+gemessene Positionen ergaben rund 11 % Verlust auf dem Rückweg, nicht 4,4 %.**
+Die neun Handmessungen oben waren eine zu kleine und zu freundliche
+Stichprobe.
+
+Das ist genau der Grund, warum der gemessene Median **getrennt** ausgewiesen
+wird. Die eine gemittelte Zahl („im Schnitt 94,4 %") mischt Messung und
+Schätzung und verdeckt damit, wofür sie da ist. Erst nebeneinander fällt auf,
+dass die Schätzung nicht trägt — und sie gilt ausgerechnet für die
+Vergleichsgruppe.
+
+Nachgezogen wird der Wert nicht auf Verdacht, sondern aus dem eigenen Buch.
+`xeno stats` nennt den Median, `XENO_RETENTION` setzt ihn ein:
+
+```bash
+echo "XENO_RETENTION=0.887" >> .env
+```
+
+Auf **Messungen** hat das keinen Einfluss — die Einstellung ersetzt nur den
+Schätzwert. Eine Einstellung, die eine Messung überschreiben kann, wäre keine
+Kalibrierung, sondern ein Wunsch.
+
+### Warum Gruppen pro Trade verglichen werden
+
+Im selben Lauf stand im Dashboard „Am besten gelaufen: **Unbekannt**" — über
+14 Trades mit −8,65 $, während Abgelehnt mit 353 Trades bei −12.653 $ lag. Pro
+Trade war Unbekannt damit nicht die beste Gruppe, sondern nur die kleinste.
+
+Verglichen wird deshalb **pro Trade**, und erst ab 30 abgeschlossenen Trades.
+Gruppen darunter stehen blass in der Tabelle und zählen im Vergleich nicht
+mit. Eine Auswertung, die die Fallzahl ignoriert, kürt zuverlässig die Gruppe,
+in der am wenigsten passiert ist.
 
 ## Aufwach-Erkennung — die zweite Chance
 
@@ -1333,6 +1371,7 @@ echo "XENO_RPC_URL=https://..." >> .env
 | `XENO_MAX_TOP10_PCT` | 30 | ab hier gilt die Verteilung als zu konzentriert |
 | `XENO_MIN_LP_LOCKED_PCT` | 90 | geforderter Anteil gesicherter LP-Token |
 | `XENO_FEE_USD` | 0.40 | Netzgebühr je Papierposition, Kauf und Verkauf zusammen |
+| `XENO_RETENTION` | 0.956 | Schätzwert für den Rückweg, wenn keine Messung vorliegt |
 
 Kurzfristig auch direkt auf der Kommandozeile:
 
@@ -1393,7 +1432,7 @@ falsch bewerten:
 
 ```bash
 pip install pytest
-python3 -m pytest -q        # 717 Tests, alle ohne Netzwerkzugriff
+python3 -m pytest -q        # 722 Tests, alle ohne Netzwerkzugriff
 ```
 
 Die Prüfungen in `xeno/checks/` sind reine Funktionen über `TokenData` und

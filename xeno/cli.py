@@ -617,7 +617,13 @@ def _print_paper(state_path=None) -> None:
     zweite Messreihe fuehrt, bekommt hier deren Bilanz und nicht die der
     ersten.
     """
-    from .paper import STOP_LOSS, TAKE_PROFIT, PaperBook, book_path_for
+    from .paper import (
+        STOP_LOSS,
+        TAKE_PROFIT,
+        PaperBook,
+        book_path_for,
+        default_retention,
+    )
 
     book = PaperBook(book_path_for(state_path) if state_path else None)
     result = book.summary()
@@ -663,6 +669,22 @@ def _print_paper(state_path=None) -> None:
                 f"  Rueckweg         im Schnitt {result['avg_retention'] * 100:.1f}% "
                 f"| {gemessen} von {gesamt} gemessen, Rest geschaetzt"
             )
+            # Der gemessene Median getrennt. Der Schnitt darueber mischt
+            # Messung und Schaetzung - und verdeckt damit genau den
+            # Unterschied, auf den es ankommt. Am ersten echten Lauf stand
+            # der Schnitt bei 94.4%, die gemessenen aber bei rund 88.7%.
+            if result["measured_retention"] is not None:
+                gemessener = result["measured_retention"] * 100
+                geschaetzt = default_retention() * 100
+                print(
+                    f"  davon gemessen   Median {gemessener:.1f}% "
+                    f"(geschaetzt wird mit {geschaetzt:.1f}%)"
+                )
+                if gemessener < geschaetzt - 1.0 and gemessen >= 30:
+                    print(
+                        "                   Achtung: gemessen teurer als geschaetzt - "
+                        "die Bilanz ist eher zu freundlich"
+                    )
         if result["reasons"]:
             grund = ", ".join(f"{k}: {v}" for k, v in sorted(result["reasons"].items()))
             print(f"  Ausstiege        {grund}")

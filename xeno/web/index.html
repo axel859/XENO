@@ -398,6 +398,9 @@ table.trades th:first-child, table.trades td:first-child { text-align: left; }
 table.trades td { text-align: right; padding: 9px 5px; border-bottom: 1px solid var(--line-soft); }
 table.trades tr:last-child td { border-bottom: none; }
 table.trades tr.best td { background: rgba(53,214,197,.055); }
+/* Zu wenige Trades, um etwas zu bedeuten. Blass statt versteckt: die Zeile
+   gehoert in die Tabelle, ihr Ergebnis aber in keinen Vergleich. */
+table.trades tr.thin td { opacity: .45; }
 .grp { font-weight: 600; font-family: var(--sans); }
 
 /* ---- Hinweise, Leerzustaende ----------------------------------------- */
@@ -1121,9 +1124,25 @@ function renderTrades(d) {
   const groups = d.groups || {};
   const rows = GROUP_ORDER.filter(g => groups[g]).map(g => [g, groups[g]]);
   const closedRows = rows.filter(([, s]) => s.closed > 0);
-  const best = closedRows.length
-    ? closedRows.reduce((a, b) => (b[1].result_usd > a[1].result_usd ? b : a))[0]
+
+  /* Verglichen wird pro Trade, nicht nach Gesamtsumme — und erst ab MIN_N.
+     Beides an echten Zahlen aufgefallen: „Am besten gelaufen: Unbekannt"
+     stand über 14 Trades mit −$8.65, während Abgelehnt mit 353 Trades bei
+     −$12.653 lag. Pro Trade war Unbekannt damit nicht die beste Gruppe,
+     sondern nur die kleinste. Eine Auswertung, die die Fallzahl ignoriert,
+     kürt zuverlässig die Gruppe, in der am wenigsten passiert ist. */
+  const MIN_N = 30;
+  const perTrade = s => s.result_usd / s.closed;
+  const ranked = closedRows.filter(([, s]) => s.closed >= MIN_N);
+  const best = ranked.length
+    ? ranked.reduce((a, b) => (perTrade(b[1]) > perTrade(a[1]) ? b : a))[0]
     : null;
+  const zuKlein = closedRows.length - ranked.length;
+
+  /* Ob der gemessene Rückweg teurer ist als der geschätzte. Erst ab MIN_N
+     Messungen eine Aussage — darunter ist es eine Stichprobe von Zufall. */
+  const teurer = t.measured_retention != null && d.default_retention != null
+    && t.measured >= MIN_N && t.measured_retention < d.default_retention - 0.01;
 
   box.innerHTML = `
     <div class="stats">
@@ -1147,20 +1166,40 @@ function renderTrades(d) {
       bei ${t.measured || 0} von ${(t.closed || 0) + (t.open || 0)} Positionen gemessen,
       sonst geschätzt.</div>` : ''}
 
+    ${t.measured_retention != null && d.default_retention != null ? `<div class="note ${
+      teurer ? 'warn' : ''}">
+      Nur die <b>gemessenen</b> Positionen: Median
+      <b>${(t.measured_retention * 100).toFixed(1)} %</b> überleben den Rückweg,
+      geschätzt wird mit ${(d.default_retention * 100).toFixed(1)} %.
+      ${teurer
+        ? `Gemessen ist der Handel also <b>teurer</b> als geschätzt — die Bilanz oben
+           ist damit eher zu freundlich, und zwar genau bei den abgelehnten Token,
+           zu denen es nie eine Messung gibt.`
+        : `Beide Zahlen liegen beieinander — die Schätzung trägt.`}</div>` : ''}
+
     <div class="wrap-x"><table class="trades">
-      <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th></tr>
-      ${rows.map(([g, s]) => `<tr class="${g === best ? 'best' : ''}">
+      <tr><th>Gruppe</th><th>Trades</th><th>Im Plus</th><th>Median</th><th>Ergebnis</th><th>pro Trade</th></tr>
+      ${rows.map(([g, s]) => {
+        const klein = s.closed > 0 && s.closed < MIN_N;
+        return `<tr class="${g === best ? 'best' : ''}${klein ? ' thin' : ''}">
         <td class="grp"><span class="badge b-${g}">${GROUP_LABEL[g] || g}</span></td>
         <td>${s.closed}${s.open ? ' <span style="color:var(--muted)">+' + s.open + '</span>' : ''}</td>
         <td>${s.closed ? s.win_rate.toFixed(0) + '%' : '–'}</td>
         <td>${s.median_multiple != null ? s.median_multiple.toFixed(2) + 'x' : '–'}</td>
         <td class="${plCls(s.result_usd)}">${s.closed ? usd(s.result_usd) : '–'}</td>
-      </tr>`).join('')}
+        <td class="${plCls(s.result_usd)}">${s.closed ? usd(perTrade(s)) : '–'}</td>
+      </tr>`;}).join('')}
     </table></div>
 
     ${best ? `<div class="note" style="margin-top:12px">Am besten gelaufen:
-      <b>${GROUP_LABEL[best] || best}</b>. Steht dort „Vermeiden" oder „Abgelehnt",
-      filtert der Bot in die falsche Richtung.</div>` : ''}
+      <b>${GROUP_LABEL[best] || best}</b> — gerechnet <b>pro Trade</b>, nicht nach
+      Gesamtsumme. Sonst gewinnt zuverlässig die Gruppe, in der am wenigsten
+      passiert ist. Steht dort „Vermeiden" oder „Abgelehnt", filtert der Bot in die
+      falsche Richtung.${zuKlein ? ` ${zuKlein} Gruppe${zuKlein > 1 ? 'n' : ''} mit
+      unter ${MIN_N} Trades ${zuKlein > 1 ? 'sind' : 'ist'} blass markiert und zählt
+      hier nicht mit — zu wenig, um etwas zu bedeuten.` : ''}</div>`
+      : `<div class="note" style="margin-top:12px">Noch keine Gruppe mit
+      ${MIN_N} abgeschlossenen Trades. Bis dahin ist jeder Vergleich Zufall.</div>`}
 
     <h3 class="sec">Positionen</h3>
     <div class="rows">${tradeList.map(posRow).join('')}</div>`;
